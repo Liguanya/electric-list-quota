@@ -39,6 +39,7 @@
     lampFactory: '030413005', // 工厂灯
     lampMedical: '030413007', // 医疗专用灯
     outlet: '030413014',      // 插座
+    switchBtn: '030413013',   // 照明开关、按钮
     // 配电箱（柜）
     boxCabinet: '030402010',  // 配电柜（开关柜/低压柜/高压柜等）
     box: '030402011'          // 配电箱（照明箱/动力箱/控制箱等）
@@ -246,6 +247,24 @@
     three: [1853, 1854, 1855]
   };
 
+  /* ============================================================
+   * 开关、按钮（清单 030413013 照明开关、按钮）官方子目 DBD29-302-2020：
+   *   拉线开关 2-1797；扳把开关明装 2-1798；密闭开关(5A以内) 2-1813
+   *   扳式暗开关(单控) 单~六联 = 2-1799~1804
+   *   扳式暗开关(双控) 单~六联 = 2-1805~1810
+   *   一般按钮 明装 2-1811 / 暗装 2-1812（照明器具章）
+   *   控制按钮 普通型 2-347 / 防爆型 2-348（控制设备章，工业按钮）
+   * ============================================================ */
+  // 扳式暗开关（单控1799起/双控1805起），索引=联数1~6
+  var SW_PLATE_CODE0 = { single: 1799, double: 1805 };
+  var SW_TIER_CN = { 1: '单联', 2: '双联', 3: '三联', 4: '四联', 5: '五联', 6: '六联' };
+  var SW_GANG_MAX = 6;
+  // 特殊照明开关
+  var SW_SPECIAL_CODE = { pull: '2-1797', surface: '2-1798', sealed: '2-1813' };
+  // 按钮
+  var BTN_CONTROL_CODE = { normal: '2-347', ex: '2-348' };   // 控制按钮（工业）普通/防爆
+  var BTN_GENERAL_CODE = { surface: '2-1811', concealed: '2-1812' }; // 一般按钮 明/暗
+
   // ============================================================
   // 分类识别
   // ============================================================
@@ -277,6 +296,8 @@
   function classify(name) {
     // 插座优先（独立器具）
     if (isOutlet(name)) return 'outlet';
+    // 照明开关、按钮（独立器具；在配电箱之前，"开关箱/开关柜"已在 isLightSwitch 排除）
+    if (isButton(name) || isLightSwitch(name)) return 'switchBtn';
     // 配电箱（柜）：在灯具/电缆关键词之前识别（"插座箱"等箱体设备归此）
     var boxInfo = identifyBox(name);
     if (boxInfo) return boxInfo.isCabinet ? 'boxCabinet' : 'box';
@@ -304,7 +325,7 @@
   function isSoftWire(name) { return /RYS|RYJS|RVS|KYJY|KYY|多芯软导线/.test(name); }
 
   /* ================ 灯具 / 插座 解析 ================ */
-  var CN_NUM = { '一': 1, '二': 2, '两': 2, '双': 2, '三': 3, '四': 4, '单': 1 };
+  var CN_NUM = { '一': 1, '二': 2, '两': 2, '双': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '单': 1 };
 
   // 灯具方形/长方形尺寸（mm）：如 100*100、600×600、1200x300，返回周长mm
   function parseLampPerimeter(name) {
@@ -374,6 +395,49 @@
     return null;
   }
   function isWireKw(name) { return /配线|穿线|BV|BYJ|RYS|KYJY|KYY|导线/.test(name); }
+
+  /* ---------------- 开关 / 按钮 解析 ---------------- */
+  // 是否为照明开关（排除配电箱/柜、行程/接近/转换等工业控制开关、隔离开关等）
+  function isLightSwitch(name) {
+    if (!/开关/.test(name)) return false;
+    if (/配电箱|开关箱|开关柜|配电柜|插座箱/.test(name)) return false;
+    if (/行程|接近|限位|转换开关|隔离开关|刀开关|负荷开关|断路器|空气开关|空开|漏电|开关电源|定时|时控|声光控开关.*灯|调速开关|调光|感应开关.*门|门禁|翘板开关箱|开关盒/.test(name)) return false;
+    // 明确的照明开关品类
+    if (/照明开关|墙壁开关|翘板|跷板|扳式|板式|扳把|单控|双控|单联|双联|三联|四联|五联|六联|拉线开关|密闭开关|声光控开关|延时开关|触摸开关|声控开关|一位|二位|三位|四位/.test(name)) return true;
+    return true; // 名称含"开关"且非排除项，默认按照明开关
+  }
+  // 是否按钮（独立）
+  function isButton(name) { return /按钮/.test(name) && !/配电箱|按钮盒/.test(name); }
+
+  // 开关类型：pull拉线 / surface扳把明装 / sealed密闭 / plate扳式暗(默认)
+  function parseSwType(name) {
+    if (/拉线/.test(name)) return 'pull';
+    if (/密闭|密封|防水开关|防尘开关/.test(name)) return 'sealed';
+    if (/明装|扳把|扳式明|板式明/.test(name)) return 'surface';
+    return 'plate';
+  }
+  // 单控/双控
+  function parseSwCtrl(name) { return /双控/.test(name) ? 'double' : 'single'; }
+  // 联数：先阿拉伯"N联/开/位"，再中文
+  function parseSwGang(name) {
+    var md = name.match(/(\d)\s*(?:联|开|位)/);
+    if (md) return Math.min(SW_GANG_MAX, Math.max(1, parseInt(md[1], 10)));
+    if (/六联|六位|六开/.test(name)) return 6;
+    if (/五联|五位|五开/.test(name)) return 5;
+    if (/四联|四位|四开/.test(name)) return 4;
+    if (/三联|三位|三开/.test(name)) return 3;
+    if (/双联|两位|两联|二联|双开/.test(name)) return 2;
+    if (/单联|一位|一开/.test(name)) return 1;
+    return 1;
+  }
+  // 按钮类型：控制按钮(工业，普通/防爆) 还是 一般按钮(明/暗)
+  function parseBtnKind(name) {
+    // 名称含"控制按钮"或工业特征→控制按钮；"一般按钮/照明按钮"→一般按钮
+    if (/控制按钮|防爆按钮|工业按钮|启动按钮|停止按钮|急停|LA\d|LAY|NP2|XB2/.test(name)) return 'control';
+    return 'general';
+  }
+  function parseBtnEx(name) { return /防爆/.test(name) ? 'ex' : 'normal'; }
+  function parseBtnLay(name) { return /暗装|暗敷|暗插|嵌墙|暗$/.test(name) ? 'concealed' : 'surface'; }
 
   // ---------- 材质（铜/铝）----------
   var ALU_MODEL_RE = /(YJLV|VLV|YJLHV|JLHV|YHLV|JKLYJ|JKLJ|NRLH|WLH|BLV|BLX)/i;
@@ -773,6 +837,44 @@
       return { code: '2-' + (OUT_CONCEAL_SINGLE15_CODE0 + hci), name: '单相暗插座15A ' + realHc + '孔', inferred: false };
     }
 
+    /* ---------- 照明开关、按钮（030413013）---------- */
+    if (it.category === 'switchBtn') {
+      var snm = it.name || '';
+      // —— 按钮 ——
+      var isBtn = (it.swIsBtn !== undefined) ? it.swIsBtn : isButton(snm);
+      if (isBtn) {
+        var kind = it.btnKind || parseBtnKind(snm);
+        if (kind === 'control') {
+          // 控制按钮（工业）：普通型2-347 / 防爆型2-348
+          var exk = it.btnEx || parseBtnEx(snm);
+          return exk === 'ex'
+            ? { code: BTN_CONTROL_CODE.ex, name: '按钮安装 防爆型', inferred: false }
+            : { code: BTN_CONTROL_CODE.normal, name: '按钮安装 普通型', inferred: false };
+        }
+        // 一般按钮（照明）：明装2-1811 / 暗装2-1812
+        var blay = it.btnLay || parseBtnLay(snm);
+        return blay === 'concealed'
+          ? { code: BTN_GENERAL_CODE.concealed, name: '一般按钮安装 暗装', inferred: false }
+          : { code: BTN_GENERAL_CODE.surface, name: '一般按钮安装 明装', inferred: false };
+      }
+      // —— 开关 ——
+      var swType = it.swType || parseSwType(snm);
+      if (swType === 'pull') return { code: SW_SPECIAL_CODE.pull, name: '拉线开关', inferred: false };
+      if (swType === 'surface') return { code: SW_SPECIAL_CODE.surface, name: '扳把开关 明装', inferred: false };
+      if (swType === 'sealed') return { code: SW_SPECIAL_CODE.sealed, name: '密闭开关 5A以内', inferred: false };
+      // 扳式暗开关：单控1799起 / 双控1805起，按联数
+      var ctrl = it.swCtrl || parseSwCtrl(snm);
+      var gang = it.swGang || parseSwGang(snm);
+      gang = Math.max(1, Math.min(SW_GANG_MAX, gang));
+      var base = SW_PLATE_CODE0[ctrl] || SW_PLATE_CODE0.single;
+      var ctrlCn = ctrl === 'double' ? '双控' : '单控';
+      return {
+        code: '2-' + (base + gang - 1),
+        name: '扳式暗开关（' + ctrlCn + '）' + SW_TIER_CN[gang],
+        inferred: false
+      };
+    }
+
     return { code: '', name: '', inferred: false };
   }
 
@@ -1006,6 +1108,131 @@
         basis: '桥架宽' + w + '无信息价档，按最接近宽度 ' + widths[bw].k + ' 信息价就近估算，请人工复核'
       };
     }
+    // ---------- 照明开关、按钮 ----------
+    if (it.category === 'switchBtn') {
+      if (it.swIsBtn) {
+        if (it.btnKind === 'control') {
+          var cb = (e.buttonControl || {})[it.btnEx] || 18;
+          return { price: cb, source: 'market', basis: (it.btnEx === 'ex' ? '防爆型控制按钮（LA39/LAY7等，国产中高档）' : '普通型控制按钮（LA39/LAY7等，国产中高档）') + '，信息价缺项按市场价（除税）' };
+        }
+        var gb = (e.buttonGeneral || {})[it.btnLay] || 9;
+        return { price: gb, source: 'market', basis: '一般按钮（' + (it.btnLay === 'concealed' ? '暗装' : '明装') + '，国产中高档），信息价缺项按市场价（除税）' };
+      }
+      if (it.swType === 'pull') return { price: e.switchPull || 9, source: 'market', basis: '拉线开关，信息价缺项按国产中高档市场价（除税）' };
+      if (it.swType === 'surface') return { price: e.switchSurface || 13, source: 'market', basis: '扳把开关明装，信息价缺项按国产中高档市场价（除税）' };
+      if (it.swType === 'sealed') return { price: e.switchSealed || 26, source: 'market', basis: '密闭开关（防水防尘，5A以内），信息价缺项按国产中高档市场价（除税）' };
+      // 扳式暗开关（大跷板）：单~四联信息价，五/六联市场价；单控双控同价
+      var g = Math.max(1, Math.min(6, it.swGang || 1));
+      var sp = (e.switchPlate || {})[g] || { price: 20, basis: 'market' };
+      var ctrlTxt = (it.swCtrl === 'double' ? '双控' : '单控') + SW_TIER_CN[g];
+      if (sp.basis === 'info') {
+        return { price: sp.price, source: 'official', basis: '天津' + info + '信息价 大跷板（扳式暗）开关 ' + ctrlTxt + '（含税中准价÷1.13除税，单/双控同价）' };
+      }
+      return { price: sp.price, source: 'market', basis: '扳式暗开关 ' + ctrlTxt + '，' + info + '信息价缺项，按国产中高档市场价（除税）' };
+    }
+    // ---------- 插座 ----------
+    if (it.category === 'outlet') {
+      if (it.outEx) {
+        var ai = it.outAmp <= 15 ? 15 : (it.outAmp <= 30 ? 30 : 60);
+        var exT = it.outThree ? 'three' : (/三孔/.test(it.name || '') && !/四孔/.test(it.name || '') ? 'single3' : 'single');
+        var exv = (((e.outletEx || {})[exT]) || {})[ai];
+        if (exv == null) return null;
+        var exN = it.outThree ? '三相四孔' : (exT === 'single3' ? '单相三孔' : '单相');
+        return { price: exv, source: 'market', basis: '防爆插座 ' + exN + ' ' + ai + 'A，信息价缺项按国产中高档市场价（除税）' };
+      }
+      if (it.outThree) {
+        var t30 = it.outAmp >= 25;
+        var tk = (it.layMode === 'surface' ? 'surface' : 'conceal') + (t30 ? 30 : 15);
+        var tv = (e.outletThree || {})[tk];
+        if (tv == null) return null;
+        return { price: tv, source: 'market', basis: '三相四孔插座 ' + (t30 ? 30 : 15) + 'A ' + (it.layMode === 'surface' ? '明装' : '暗装') + '，信息价缺项按国产中高档市场价（除税）' };
+      }
+      if (it.outAmp === 30) {
+        var sk = it.layMode === 'surface' ? 'surfaceSingle3' : ('concealSingle' + ((it.outHoles === 2) ? 2 : 3));
+        var sv = (e.outlet30 || {})[sk];
+        if (sv == null) return null;
+        return { price: sv, source: 'market', basis: '单相插座30A ' + (it.layMode === 'surface' ? '明装' : '暗装') + '，信息价缺项按国产中高档市场价（除税）' };
+      }
+      // 单相15A
+      var tbl15 = it.layMode === 'surface' ? e.outlet15Surface : e.outlet15Conceal;
+      if (!tbl15) return null;
+      var h = it.outHoles || 3;
+      var hk = String(h);
+      var pv15 = tbl15[hk];
+      if (pv15 == null) {
+        // 越界取端档
+        var hks = Object.keys(tbl15).map(Number).sort(function (a, b) { return a - b; });
+        pv15 = tbl15[String(h < hks[0] ? hks[0] : hks[hks.length - 1])];
+      }
+      // 暗装五孔、三孔为信息价；其余孔数及明装为市场价
+      var isInfoHole = (it.layMode === 'concealed' && (h === 5 || h === 3));
+      if (isInfoHole) {
+        return { price: pv15, source: 'official', basis: '天津' + info + '信息价 暗插座 ' + (h === 5 ? '五孔' : '三孔') + ' 单相15A（含税中准价÷1.13除税）' };
+      }
+      return { price: pv15, source: 'market', basis: '单相插座15A ' + h + '孔 ' + (it.layMode === 'surface' ? '明装' : '暗装') + '，' + info + '信息价缺项，按国产中高档市场价（除税）' };
+    }
+    // ---------- 灯具（成套灯具信息价缺项，均按国产中高档市场价；LED灯管/灯口除外）----------
+    var lampMkt = function (v, label) {
+      return { price: v, source: 'market', basis: label + '，信息价仅有LED灯管/灯口，成套灯具按国产中高档市场价（除税）' };
+    };
+    if (it.category === 'lampCommon') {
+      var lq = matchQuota(it);
+      if (lq && lq.code && e.lampPlain && e.lampPlain[lq.code] != null) {
+        return lampMkt(e.lampPlain[lq.code], lq.name.replace(/^其他普通灯具安装\s*/, '') + '（成套）');
+      }
+      // 吸顶灯按周长
+      var lp = it.lampPerimeter || 0;
+      var lv = lp <= 800 ? e.lampCeilByPeri[800] : (lp <= 1100 ? e.lampCeilByPeri[1100] : e.lampCeilByPeri.inf);
+      return lampMkt(lv, 'LED吸顶灯具（灯罩周长' + (lp <= 800 ? '800mm以内' : lp <= 1100 ? '1100mm以内' : '1100mm以外') + '）');
+    }
+    if (it.category === 'lampFluor') {
+      if (isPanelLamp(it.name || '') || it.fluorPanel) {
+        var pp2 = it.lampPerimeter || 0;
+        var pv2 = pp2 <= 800 ? e.lampCeilByPeri[800] : (pp2 <= 1100 ? e.lampCeilByPeri[1100] : e.lampCeilByPeri.inf);
+        return lampMkt(pv2, 'LED平板灯（灯罩周长' + (pp2 <= 800 ? '800mm以内' : pp2 <= 1100 ? '1100mm以内' : '1100mm以外') + '）');
+      }
+      var ft = Math.max(1, Math.min(4, it.fluorTubes || parseFluorTubes(it.name || '')));
+      var fk = it.fluorKind === 'assembled' ? 'assembled' : 'complete';
+      var fm = it.fluorMount || parseFluorMount(it.name || '');
+      var frow = (e.lampFluor || {})[fm];
+      // 组装型无吊管/嵌入 → 回退成套同方式（与定额回退一致）
+      if (!frow || (fk === 'assembled' && (fm === 'pipe' || fm === 'embed'))) frow = (e.lampFluor || {}).chain;
+      var fv = frow[ft];
+      return lampMkt(fv, 'LED' + FLUOR_TUBE_CN[ft] + '荧光灯 ' + FLUOR_MOUNT_NAME[fm] + '（' + (fk === 'assembled' ? '组装型' : '成套型') + '）');
+    }
+    if (it.category === 'lampFactory') {
+      var ffq = matchQuota(it);
+      if (ffq && ffq.code && e.lampFactoryFixed && e.lampFactoryFixed[ffq.code] != null) {
+        return lampMkt(e.lampFactoryFixed[ffq.code], ffq.name.replace(/^.*?安装\s*/, '') + '（成套）');
+      }
+      var ffm = it.factoryMount || parseFactoryMount(it.name || '');
+      var fwp = (it.factoryType === 'waterproof' || isWaterproofFactory(it.name || ''));
+      var ffv = (fwp ? e.lampFactoryWp : e.lampFactoryHood)[ffm];
+      return lampMkt(ffv, (fwp ? '防水防尘灯' : '工厂罩灯') + ' ' + (fwp ? LAMP_FACTORY_WP_NAME[ffm] : LAMP_FACTORY_HOOD_NAME[ffm]));
+    }
+    if (it.category === 'lampMedical') {
+      var mq = matchQuota(it);
+      if (mq && mq.code && e.lampMedical && e.lampMedical[mq.code] != null) {
+        return lampMkt(e.lampMedical[mq.code], mq.name.replace(/^医院灯具安装\s*/, ''));
+      }
+    }
+    if (it.category === 'lampDecor') {
+      var dn = it.name || '';
+      var dk = null;
+      if (/筒灯/.test(dn)) dk = 'downlight';
+      else if (/射灯/.test(dn)) dk = 'spot';
+      else if (/蜡烛|点光源/.test(dn)) dk = 'candle';
+      else if (/格栅/.test(dn)) dk = 'grille';
+      else if (/无主灯|嵌入/.test(dn)) dk = 'embedded';
+      else if (/标志|诱导|疏散|安全出口/.test(dn)) dk = 'indicator';
+      else if (/花灯|艺术/.test(dn)) dk = 'art';
+      if (dk && e.lampDecor && e.lampDecor[dk] != null) {
+        var dlabel = { downlight: 'LED筒灯', spot: 'LED射灯', candle: '蜡烛灯/点光源', grille: '艺术格栅装饰灯', embedded: '嵌入式无主灯', indicator: '疏散指示灯（带蓄电池）', art: '艺术花灯' }[dk];
+        return lampMkt(e.lampDecor[dk], dlabel + '（成套）');
+      }
+      // 装饰灯定额子目待手选，价格也不自动套
+      return null;
+    }
     return null;
   }
 
@@ -1017,6 +1244,7 @@
     conduit: '配管', wiring: '配线', bridge: '桥架',
     lampCommon: '普通灯', lampDecor: '装饰灯', lampFluor: '荧光灯',
     lampFactory: '工厂灯', lampMedical: '医疗专用灯', outlet: '插座',
+    switchBtn: '照明开关、按钮',
     box: '配电箱', boxCabinet: '配电柜'
   };
   var CAT_WORK = {
@@ -1032,6 +1260,7 @@
     lampFactory: '工厂灯具安装、接线、固定、试亮及辅助工作',
     lampMedical: '医院专用灯具安装、接线、固定、调试及辅助工作',
     outlet: '测位画线、打眼、清扫盒子、装插座、接线、装盖及辅助工作',
+    switchBtn: '测位画线、打眼、清扫盒子、装开关（按钮）、接线、装盖及辅助工作',
     box: '成套配电箱购置、运输、安装、接地、接线、调试及辅助工作',
     boxCabinet: '成套配电柜（屏）购置、运输、安装、接地、接线、调试及辅助工作'
   };
@@ -1061,6 +1290,16 @@
       return (it.outEx ? '防爆 ' : '') + (it.outThree ? '三相' : '单相') + ' ' + it.outAmp + 'A' +
         (it.outHoles ? ' ' + it.outHoles + '孔' : (it.outThree ? ' 4孔' : '')) +
         (it.layMode === 'concealed' ? ' 暗装' : ' 明装');
+    }
+    if (it.category === 'switchBtn') {
+      if (it.swIsBtn) {
+        if (it.btnKind === 'control') return '控制按钮 ' + (it.btnEx === 'ex' ? '防爆型' : '普通型');
+        return '一般按钮 ' + (it.btnLay === 'concealed' ? '暗装' : '明装');
+      }
+      if (it.swType === 'pull') return '拉线开关';
+      if (it.swType === 'surface') return '扳把开关 明装';
+      if (it.swType === 'sealed') return '密闭开关 5A以内';
+      return '扳式暗开关 ' + (it.swCtrl === 'double' ? '双控' : '单控') + ' ' + SW_TIER_CN[it.swGang || 1];
     }
     var parts = [];
     if (it.model) parts.push(it.model);
@@ -1111,6 +1350,9 @@
       factoryMount: '', factoryType: '',
       // 插座
       outEx: false, outThree: false, outAmp: 15, outHoles: null,
+      // 开关、按钮
+      swIsBtn: false, swType: 'plate', swCtrl: 'single', swGang: 1,
+      btnKind: 'general', btnEx: 'normal', btnLay: 'surface',
       // 配电箱（柜）
       isCabinet: false, lowVolt: false, form: 'wall', perimeterTier: BOX_DEFAULT_TIER,
       listCode: LIST[category]
@@ -1171,6 +1413,18 @@
       if (/暗装|暗插|暗插座/.test(name)) it.layMode = 'concealed';
       else it.layMode = 'surface';
     }
+    if (category === 'switchBtn') {
+      it.swIsBtn = isButton(name);
+      if (it.swIsBtn) {
+        it.btnKind = parseBtnKind(name);
+        it.btnEx = parseBtnEx(name);
+        it.btnLay = parseBtnLay(name);
+      } else {
+        it.swType = parseSwType(name);
+        it.swCtrl = parseSwCtrl(name);
+        it.swGang = parseSwGang(name);
+      }
+    }
     return it;
   }
 
@@ -1221,7 +1475,7 @@
       // 单位：电缆/配管/配线/桥架=m；电缆头/插座=个；灯具=套；配电箱（柜）=台
       if (it.category === 'box' || it.category === 'boxCabinet') it.unit = '台';
       else if (/^lamp/.test(it.category)) it.unit = '套';
-      else if (it.category === 'head' || it.category === 'outlet') it.unit = '个';
+      else if (it.category === 'head' || it.category === 'outlet' || it.category === 'switchBtn') it.unit = '个';
       else it.unit = 'm';
 
       var quota = matchQuota(it);
@@ -1231,21 +1485,24 @@
       it.warn = buildWarn(it, quota);
       if (it.qtyWarn) it.warn = (it.warn ? it.warn + '；' : '') + '工程量缺失，暂按1' + it.unit + '计请核对';
 
-      // 主材价：电力电缆走电缆价格库；配管/配线/桥架走电气材料信息价；控制电缆/电缆头暂不自动询价
+      // 主材价：电力电缆走电缆价格库；配管/配线/桥架/开关/插座/灯具走电气材料价（信息价优先，缺项市场价）；
+      // 配电箱（柜）价格留空由用户询价；控制电缆/电缆头暂不自动询价
       var priceInfo = null;
       if (it.category === 'power') {
         priceInfo = lookupPrice(periodKey, it.material, it.model, it.cores, it.section);
-      } else if (it.category === 'conduit' || it.category === 'wiring' || it.category === 'bridge') {
+      } else if (it.category !== 'box' && it.category !== 'boxCabinet' &&
+                 it.category !== 'control' && it.category !== 'head') {
         priceInfo = lookupElecPrice(periodKey, it);
       }
       if (priceInfo) {
         it.price = priceInfo.price;
-        it.priceSource = priceInfo.source;       // official | estimated
+        it.priceSource = priceInfo.source;       // official | estimated | market
         it.priceBasis = priceInfo.basis || '';
       } else {
         it.price = null;
-        // 该计价类但查不到价：配线软线等标"待询价"，其余（控制电缆/电缆头）标"未计价"
-        var pricedCats = { power: 1, conduit: 1, wiring: 1, bridge: 1 };
+        // 配电箱（柜）价格空缺：标"未计价"；控制电缆/电缆头不自动询价；其余该计价但查不到（软线/装饰灯未识别）标"待询价"
+        var pricedCats = { power: 1, conduit: 1, wiring: 1, bridge: 1, outlet: 1, switchBtn: 1,
+          lampCommon: 1, lampFluor: 1, lampFactory: 1, lampMedical: 1, lampDecor: 1 };
         it.priceSource = pricedCats[it.category] ? 'pending' : 'na';
         it.priceBasis = '';
       }
@@ -1253,7 +1510,31 @@
       it.features = generateFeature(format, it);
       results.push(it);
     }
+    results._periodKey = periodKey;
+    results._format = format;
     return results;
+  }
+
+  // 行内选择变更后重算该条主材价（开关/插座/灯具/电缆等与选型相关）
+  function recomputePrice(it, periodKey) {
+    var info = null;
+    if (it.category === 'power') {
+      info = lookupPrice(periodKey, it.material, it.model, it.cores, it.section);
+    } else if (it.category !== 'box' && it.category !== 'boxCabinet' &&
+               it.category !== 'control' && it.category !== 'head') {
+      info = lookupElecPrice(periodKey, it);
+    }
+    if (info) {
+      it.price = info.price;
+      it.priceSource = info.source;
+      it.priceBasis = info.basis || '';
+    } else {
+      it.price = null;
+      var cats = { power: 1, conduit: 1, wiring: 1, bridge: 1, outlet: 1, switchBtn: 1,
+        lampCommon: 1, lampFluor: 1, lampFactory: 1, lampMedical: 1, lampDecor: 1 };
+      it.priceSource = cats[it.category] ? 'pending' : 'na';
+      it.priceBasis = '';
+    }
   }
 
   // 行内选择变更后重算该条定额
@@ -1270,12 +1551,14 @@
   // ============================================================
   // 渲染
   // ============================================================
-  var PRICED_CATS = { power: 1, conduit: 1, wiring: 1, bridge: 1 };
+  var PRICED_CATS = { power: 1, conduit: 1, wiring: 1, bridge: 1, outlet: 1, switchBtn: 1,
+    lampCommon: 1, lampFluor: 1, lampFactory: 1, lampMedical: 1, lampDecor: 1 };
   function priceText(item) {
     if (!PRICED_CATS[item.category]) return '<span class="tag tag-na">未计价</span>';
     if (item.price === null) return '<span class="tag tag-pending">待询价</span>';
     var basisTip = item.priceBasis ? ' title="' + String(item.priceBasis).replace(/"/g, '&quot;') + '"' : '';
     if (item.priceSource === 'estimated') return '<span class="tag tag-est" ' + basisTip + '>估</span> <span ' + basisTip + '>¥' + item.price.toFixed(2) + '</span>';
+    if (item.priceSource === 'market') return '<span class="tag tag-market" ' + basisTip + '>市场价</span> <span ' + basisTip + '>¥' + item.price.toFixed(2) + '</span>';
     return '<span class="tag tag-info" ' + basisTip + '>信息价</span> <span ' + basisTip + '>¥' + item.price.toFixed(2) + '</span>';
   }
   function inferTag(it) {
@@ -1323,6 +1606,31 @@
     if (it.category === 'outlet') {
       if (it.outEx) return '<span class="lay-static">防爆</span>';
       return sel('lay', it._i, opt('surface', it.layMode, '明装') + opt('concealed', it.layMode, '暗装'), 'lay-outlet');
+    }
+    // 照明开关、按钮
+    if (it.category === 'switchBtn') {
+      if (it.swIsBtn) {
+        var kindSel = sel('btnKind', it._i,
+          opt('general', it.btnKind, '一般按钮') + opt('control', it.btnKind, '控制按钮'), 'lay-sw');
+        var subSel;
+        if (it.btnKind === 'control') {
+          subSel = sel('btnEx', it._i, opt('normal', it.btnEx, '普通型') + opt('ex', it.btnEx, '防爆型'), 'lay-sw');
+        } else {
+          subSel = sel('btnLay', it._i, opt('surface', it.btnLay, '明装') + opt('concealed', it.btnLay, '暗装'), 'lay-sw');
+        }
+        return '<div class="lay-stack">' + kindSel + subSel + '</div>';
+      }
+      var typeSel = sel('swType', it._i,
+        opt('plate', it.swType, '扳式暗开关') + opt('pull', it.swType, '拉线开关') +
+        opt('surface', it.swType, '扳把开关明装') + opt('sealed', it.swType, '密闭开关'), 'lay-sw');
+      var html = '<div class="lay-stack">' + typeSel;
+      if (it.swType === 'plate') {
+        var ctrlSel = sel('swCtrl', it._i, opt('single', it.swCtrl, '单控') + opt('double', it.swCtrl, '双控'), 'lay-sw');
+        var gh = '';
+        [1, 2, 3, 4, 5, 6].forEach(function (g) { gh += opt(String(g), String(it.swGang || 1), SW_TIER_CN[g]); });
+        html += sel('swGang', it._i, gh, 'lay-sw') + ctrlSel;
+      }
+      return html + '</div>';
     }
     // 荧光灯：成套/组装 + 安装方式 + 管数（平板灯按周长，无下拉）
     if (it.category === 'lampFluor' && !it.fluorPanel) {
@@ -1379,6 +1687,16 @@
     if (it.category === 'outlet') {
       return (it.outEx ? '防爆 ' : '') + (it.outThree ? '三相' : '单相') + ' ' + it.outAmp + 'A' + (it.outHoles ? ' ' + it.outHoles + '孔' : '');
     }
+    if (it.category === 'switchBtn') {
+      if (it.swIsBtn) {
+        if (it.btnKind === 'control') return '控制按钮 ' + (it.btnEx === 'ex' ? '防爆型' : '普通型');
+        return '一般按钮 ' + (it.btnLay === 'concealed' ? '暗装' : '明装');
+      }
+      if (it.swType === 'pull') return '拉线开关';
+      if (it.swType === 'surface') return '扳把开关明装';
+      if (it.swType === 'sealed') return '密闭开关 5A以内';
+      return '扳式暗开关 ' + (it.swCtrl === 'double' ? '双控' : '单控') + ' ' + SW_TIER_CN[it.swGang || 1];
+    }
     return escapeHtml(it.spec || '—');
   }
 
@@ -1428,7 +1746,8 @@
         var act = sel.getAttribute('data-act');
         var it = data[idx];
         if (!it) return;
-        if (act === 'lay') it.layMode = sel.value;
+        var needReprice = false;
+        if (act === 'lay') { it.layMode = sel.value; needReprice = true; }
         if (act === 'wire') it.wireType = sel.value;
         // 荧光灯：成套/组装、安装方式、管数
         if (act === 'flKind') it.fluorKind = sel.value;
@@ -1448,7 +1767,21 @@
           else if (!it.perimeterTier) it.perimeterTier = BOX_DEFAULT_TIER;
         }
         if (act === 'boxPeri') it.perimeterTier = sel.value;
+        // 开关、按钮
+        if (act === 'swType') it.swType = sel.value;
+        if (act === 'swCtrl') it.swCtrl = sel.value;
+        if (act === 'swGang') it.swGang = parseInt(sel.value, 10);
+        if (act === 'btnKind') it.btnKind = sel.value;
+        if (act === 'btnEx') it.btnEx = sel.value;
+        if (act === 'btnLay') { it.btnLay = sel.value; }
+        if (act === 'swType' || act === 'swCtrl' || act === 'swGang' ||
+            act === 'btnKind' || act === 'btnEx' || act === 'btnLay' ||
+            act === 'flKind' || act === 'flMount' || act === 'flTube' || act === 'facMount') needReprice = true;
         recomputeQuota(it);
+        if (needReprice) {
+          recomputePrice(it, data._periodKey);
+          it.features = generateFeature(data._format, it);
+        }
         renderTable(data); // 重渲染保留选中值（已写回 it）
       });
     });
@@ -1487,8 +1820,8 @@
     data.forEach(function (it) {
       // 有主材信息价的类别（电力电缆/配管/配线/桥架）带主材单价；配电箱（柜）设备费未计价但同样生成Z00741子目下设备行（单价0）
       var isBox = (it.category === 'box' || it.category === 'boxCabinet');
-      var hasPrice = it.price !== null &&
-        (it.category === 'power' || it.category === 'conduit' || it.category === 'wiring' || it.category === 'bridge');
+      // 有主材价的类别（电缆/配管/配线/桥架/开关/插座/灯具）带主材单价；配电箱（柜）设备费空缺但仍生成Z00741子目下设备行（单价0）
+      var hasPrice = it.price !== null && PRICED_CATS[it.category];
       var hasMaterialRow = hasPrice || isBox;
       var secVal = (it.section !== null && (it.category === 'power' || it.category === 'head' || it.category === 'control')) ? it.section : '';
       var specVal = specCell(it);
@@ -1497,7 +1830,8 @@
         // 关键参数缺失、未套定额：单行待人工处理
         wsData.push([
           it.index, it.name, it.categoryLabel, (it.category==='power'||it.category==='control'||it.category==='head')?(it.material === '铝' ? '铝' : '铜'):'', it.model, specVal,
-          secVal, it.quantity, '', '待人工处理', it.name, '', it.unit, it.quantity, ''
+          secVal, it.quantity, '', '待人工处理', it.name, '', it.unit, it.quantity,
+          hasPrice ? num2(it.price) : ''
         ]);
         return;
       }
@@ -1566,7 +1900,7 @@
       area.style.display = 'block';
       btn.style.display = 'flex';
       document.getElementById('statusBar').className = 'status-bar status-ok';
-      document.getElementById('statusBar').textContent = '成功解析 ' + exportData.length + ' 条（配电箱柜/电缆/控制缆/电缆头/配管/配线/桥架/灯具/插座）；请在"敷设方式/选型"列为配电箱、配管、配线、插座、荧光灯、工厂灯选择对应选项；黄色行为需人工核对项';
+      document.getElementById('statusBar').textContent = '成功解析 ' + exportData.length + ' 条（配电箱柜/电缆/控制缆/电缆头/配管/配线/桥架/灯具/开关按钮/插座）；请在"敷设方式/选型"列为配电箱、配管、配线、开关按钮、插座、荧光灯、工厂灯选择对应选项；黄色行为需人工核对项';
     } else {
       area.style.display = 'none';
       btn.style.display = 'none';

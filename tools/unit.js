@@ -294,6 +294,8 @@ console.log('== 电气材料信息价（天津2026年第9期，除税）==');
   ck('配电箱单位台', A.parseRows([[1, '配电箱X', 1]], A.getPeriods()[0].period, 'jj')[0].unit, '台');
   ck('灯具单位套', A.parseRows([[1, '圆球吸顶灯', 1]], A.getPeriods()[0].period, 'jj')[0].unit, '套');
   ck('插座单位个', A.parseRows([[1, '单相暗插座15A 5孔', 1]], A.getPeriods()[0].period, 'jj')[0].unit, '个');
+  ck('开关单位个', A.parseRows([[1, '开关，单控，双联', 1]], A.getPeriods()[0].period, 'jj')[0].unit, '个');
+  ck('按钮单位个', A.parseRows([[1, '防爆按钮', 1]], A.getPeriods()[0].period, 'jj')[0].unit, '个');
   ck('电缆单位m', A.parseRows([[1, 'YJV-4×35 电力电缆', 1]], A.getPeriods()[0].period, 'jj')[0].unit, 'm');
   // parseRows：3列解析 + 序号透传 + 跳过表头
   var aoa = [['序号', '项目名称', '数量'], [5, '照明配电箱AL1', 2], ['', '动力配电箱AP1', 3], [7, '低压开关柜AA1', 1], [8, '高压开关柜AH1', 2]];
@@ -306,6 +308,72 @@ console.log('== 电气材料信息价（天津2026年第9期，除税）==');
   // 不抢占原有类别
   ck('插座仍归outlet', A.classify('单相暗插座15A 5孔'), 'outlet');
   ck('电缆仍归power', A.classify('铜芯电力电缆 YJV-4×35'), 'power');
+})();
+
+// ============================================================
+// 照明开关、按钮（清单 030413013）+ 主材价
+// ============================================================
+(function switchBtn() {
+  console.log('== 照明开关、按钮 ==');
+  function sq(n) { const it = A.buildItem(n); return { cat: it.category, lc: it.listCode, qc: A.matchQuota(it).code, it: it }; }
+  // 分类与清单
+  ck('开关归switchBtn', sq('扳式暗开关，单控，单联').cat, 'switchBtn');
+  ck('按钮归switchBtn', sq('一般按钮 明装').cat, 'switchBtn');
+  ck('开关清单030413013', sq('开关，双控，双联').lc, '030413013');
+  ck('按钮清单030413013', sq('控制按钮').lc, '030413013');
+  // 不抢占配电箱/工业开关：箱体与工业控制开关均不得识别为 switchBtn
+  ck('开关箱不抢照明开关', A.classify('开关箱') !== 'switchBtn', true);
+  ck('开关柜归柜类', A.classify('低压开关柜') === 'boxCabinet', true);
+  ck('行程开关非照明开关', A.classify('行程开关') !== 'switchBtn', true);
+  ck('隔离开关非照明开关', A.classify('隔离开关') !== 'switchBtn', true);
+  // 扳式暗开关 单控 1~6联 = 2-1799~1804
+  ['单联', '双联', '三联', '四联', '五联', '六联'].forEach(function (cn, i) {
+    ck('单控' + cn + '=2-' + (1799 + i), sq('扳式暗开关，单控，' + cn).qc, '2-' + (1799 + i));
+  });
+  // 扳式暗开关 双控 1~6联 = 2-1805~1810
+  ['单联', '双联', '三联', '四联', '五联', '六联'].forEach(function (cn, i) {
+    ck('双控' + cn + '=2-' + (1805 + i), sq('开关，双控，' + cn).qc, '2-' + (1805 + i));
+  });
+  // 特殊开关
+  ck('拉线开关2-1797', sq('拉线开关').qc, '2-1797');
+  ck('扳把开关明装2-1798', sq('扳把开关明装').qc, '2-1798');
+  ck('密闭开关2-1813', sq('密闭开关').qc, '2-1813');
+  // 按钮：控制普通2-347 / 防爆2-348；一般明2-1811 / 暗2-1812
+  ck('控制按钮普通2-347', sq('控制按钮 普通型').qc, '2-347');
+  ck('防爆按钮2-348(官方核实)', sq('防爆按钮').qc, '2-348');
+  ck('一般按钮明装2-1811', sq('一般按钮 明装').qc, '2-1811');
+  ck('一般按钮暗装2-1812', sq('一般按钮 暗装').qc, '2-1812');
+
+  console.log('== 开关/按钮/插座/灯具 主材价 ==');
+  var PK = A.getPeriods()[0].period;
+  function pr(n) { return A.parseRows([[1, n, 10]], PK, 'gld')[0]; }
+  function approx(a, b) { return a !== null && Math.abs(a - b) < 0.01; }
+  // 开关：单~四联信息价，五六联市场价
+  var s1 = pr('扳式暗开关，单控，单联');
+  ck('单联开关信息价11.14', approx(s1.price, 11.14) && s1.priceSource === 'official', true);
+  ck('四联开关信息价31.32', (function () { var r = pr('开关，单控，四联'); return approx(r.price, 31.32) && r.priceSource === 'official'; })(), true);
+  ck('六联开关市场价52', (function () { var r = pr('开关，双控，六联'); return approx(r.price, 52) && r.priceSource === 'market'; })(), true);
+  ck('控制按钮普通市场价18', (function () { var r = pr('控制按钮 普通型'); return approx(r.price, 18) && r.priceSource === 'market'; })(), true);
+  ck('防爆按钮市场价65', (function () { var r = pr('防爆按钮'); return approx(r.price, 65) && r.priceSource === 'market'; })(), true);
+  ck('一般按钮暗装8.5', approx(pr('一般按钮 暗装').price, 8.5), true);
+  // 插座：暗五孔/三孔信息价
+  var o5 = pr('单相暗插座15A 五孔');
+  ck('暗五孔信息价7.1定额2-1834', approx(o5.price, 7.1) && o5.priceSource === 'official' && o5.quotaCode === '2-1834', true);
+  ck('暗三孔信息价6.6', (function () { var r = pr('单相暗插座15A 三孔'); return approx(r.price, 6.6) && r.priceSource === 'official'; })(), true);
+  ck('明五孔市场价9', (function () { var r = pr('单相明插座15A 五孔'); return approx(r.price, 9) && r.priceSource === 'market'; })(), true);
+  ck('防爆插座市场价42', approx(pr('防爆插座 单相15A').price, 42), true);
+  // 灯具市场价
+  ck('软线吊灯22', approx(pr('软线吊灯').price, 22), true);
+  ck('双管嵌入荧光灯68', approx(pr('双管荧光灯 嵌入式').price, 68), true);
+  ck('工厂罩弯杆110', approx(pr('工厂罩灯 弯杆式').price, 110), true);
+  ck('投光灯280', approx(pr('投光灯').price, 280), true);
+  ck('紫外线杀菌灯180', approx(pr('紫外线杀菌灯').price, 180), true);
+  ck('筒灯28', approx(pr('LED筒灯').price, 28), true);
+  // 配电箱（柜）价格留空
+  var bx = pr('照明配电箱AL1');
+  ck('配电箱价格留空', bx.price === null && bx.priceSource === 'na', true);
+  // 控制电缆/电缆头不自动询价
+  ck('控制电缆不询价', pr('KVV-7×1.5 控制电缆').price, null);
 })();
 
 console.log('\n结果: ' + pass + ' 通过, ' + fail + ' 失败');
