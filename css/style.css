@@ -355,7 +355,9 @@ tr:hover {
     min-width: 130px;
 }
 .cell-select.lay-lamp,
-.cell-select.lay-box {
+.cell-select.lay-box,
+.cell-select.lay-ground,
+.cell-select.lay-bus {
     width: 100%;
     font-size: 12px;
     padding: 4px 6px;

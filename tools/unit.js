@@ -376,5 +376,106 @@ console.log('== 电气材料信息价（天津2026年第9期，除税）==');
   ck('控制电缆不询价', pr('KVV-7×1.5 控制电缆').price, null);
 })();
 
+/* ============================================================
+   防雷接地（清单030410xxx / 定额2-369·824·830·880·881·885·895）
+   ============================================================ */
+(function () {
+  var PK = A.getPeriods()[0].period;
+  function pr(n) { return A.parseRows([[1, n, 10]], PK, 'gld')[0]; }
+  function approx(a, b) { return a !== null && Math.abs(a - b) < 0.01; }
+  console.log('\n== 防雷接地 ==');
+
+  // 等电位端子箱
+  var pot = pr('局部等电位端子箱');
+  ck('等电位清单030410007', pot.listCode, '030410007');
+  ck('等电位定额2-369', pot.quotaCode, '2-369');
+  ck('等电位单位台', pot.unit, '台');
+  ck('局部等电位45元', approx(pot.price, 45), true);
+  var potM = pr('总等电位端子箱');
+  ck('总等电位220元', approx(potM.price, 220), true);
+  ck('等电位默认局部', pr('等电位联结').price, 45);
+
+  // 接地母线（扁钢）
+  var gb = pr('镀锌扁钢 4*40');
+  ck('接地母线清单030410002', gb.listCode, '030410002');
+  ck('接地母线定额2-830', gb.quotaCode, '2-830');
+  ck('接地母线单位m', gb.unit, 'm');
+  ck('接地母线5.473元/m', approx(gb.price, 5.473), true);
+  ck('接地母线-40×4同识别', pr('接地母线 -40×4').quotaCode, '2-830');
+
+  // 接地装置
+  var gs = pr('接地装置');
+  ck('接地装置清单030416027', gs.listCode, '030416027');
+  ck('接地装置定额2-895', gs.quotaCode, '2-895');
+  ck('接地装置单位系统', gs.unit, '系统');
+  ck('接地装置无主材', gs.price === null && gs.priceSource === 'none', true);
+
+  // 引下线
+  var gd = pr('防雷引下线');
+  ck('引下线清单030410003', gd.listCode, '030410003');
+  ck('引下线定额2-880', gd.quotaCode, '2-880');
+  ck('引下线无主材', gd.priceSource, 'none');
+
+  // 均压环 / 避雷网
+  var gr = pr('均压环 利用圈梁钢筋');
+  ck('均压环清单030410004', gr.listCode, '030410004');
+  ck('均压环定额2-885', gr.quotaCode, '2-885');
+  ck('均压环不计主材', gr.priceSource, 'none');
+  var gm = pr('避雷网 φ10镀锌圆钢');
+  ck('避雷网同定额2-885', gm.quotaCode, '2-885');
+  ck('避雷网φ10圆钢信息价2.09', approx(gm.price, 2.09) && gm.priceSource === 'official', true);
+  ck('闪接带按避雷网计主材', approx(pr('闪接带 -25×4').price, 2.09), true);
+
+  // 接地极
+  var gr2 = pr('角钢接地极 L50×5');
+  ck('接地极清单030410001', gr2.listCode, '030410001');
+  ck('接地极定额2-824', gr2.quotaCode, '2-824');
+  ck('接地极单位根', gr2.unit, '根');
+  ck('接地极无主材', gr2.priceSource, 'none');
+
+  // 断接卡 / 测试点
+  var gt = pr('断接卡子');
+  ck('断接卡定额2-881', gt.quotaCode, '2-881');
+  ck('断接卡单位套', gt.unit, '套');
+  ck('接地测试点同2-881', pr('接地测试点').quotaCode, '2-881');
+})();
+
+/* ============================================================
+   母线（清单030403006/030403007，定额2-229~2-237）
+   ============================================================ */
+(function () {
+  var PK = A.getPeriods()[0].period;
+  function pr(n) { return A.parseRows([[1, n, 10]], PK, 'gld')[0]; }
+  function approx(a, b) { return a !== null && Math.abs(a - b) < 0.01; }
+  console.log('\n== 母线 ==');
+
+  var b5 = pr('母线 500A');
+  ck('母线清单030403006', b5.listCode, '030403006');
+  ck('母线500A→2-230(800A以内)', b5.quotaCode, '2-230');
+  ck('母线单位m', b5.unit, 'm');
+  ck('母线500A主材1327.43', approx(b5.price, 1327.43), true);
+  ck('母线2500A→2-233', pr('母线 2500A').quotaCode, '2-233');
+  ck('母线400A→2-229', pr('母线 400A').quotaCode, '2-229');
+  ck('母线1250A→2-231', pr('母线 1250A').quotaCode, '2-231');
+  ck('母线2000A→2-232', pr('母线 2000A').quotaCode, '2-232');
+  ck('母线4000A→2-233', pr('母线 4000A').quotaCode, '2-233');
+  ck('母线2500A主材6637.17', approx(pr('母线 2500A').price, 6637.17), true);
+  ck('母线未注电流→2-229且待询价', (function () { var r = pr('母线槽'); return r.quotaCode === '2-229' && r.price === null && r.priceSource === 'pending'; })(), true);
+
+  var bx = pr('母线插接箱 100A');
+  ck('母线箱清单030403007', bx.listCode, '030403007');
+  ck('母线箱100A→2-234', bx.quotaCode, '2-234');
+  ck('母线箱单位台', bx.unit, '台');
+  ck('母线箱主材1946', approx(bx.price, 1946), true);
+  ck('母线箱630A→2-237', pr('封闭母线始端箱 630A').quotaCode, '2-237');
+  ck('母线箱无参数→2-234', pr('母线箱').quotaCode, '2-234');
+
+  // 不误伤：接地母线不归母线类
+  ck('接地母线不归母线类', pr('接地母线').category, 'ground');
+  // 母线不误伤桥架/电缆
+  ck('桥架仍归bridge', pr('钢制槽式桥架 200×100').category, 'bridge');
+  ck('电缆仍归power', pr('WDZ-YJY-4×25+1×16').category, 'power');
+})();
+
 console.log('\n结果: ' + pass + ' 通过, ' + fail + ' 失败');
 process.exit(fail ? 1 : 0);

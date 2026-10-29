@@ -265,6 +265,47 @@
   var BTN_CONTROL_CODE = { normal: '2-347', ex: '2-348' };   // 控制按钮（工业）普通/防爆
   var BTN_GENERAL_CODE = { surface: '2-1811', concealed: '2-1812' }; // 一般按钮 明/暗
 
+  // ---------- 防雷接地（第二册 第九章）：清单码 + 定额 ----------
+  var GROUND_LIST = {
+    rod: '030410001',    // 接地极
+    busbar: '030410002', // 接地母线
+    down: '030410003',   // 引下线
+    ring: '030410004',   // 均压环
+    pot: '030410007',    // 等电位端子箱、测试板
+    sys: '030416027',    // 接地装置
+    test: '030410003'    // 断接卡子/测试点（按引下线清单计列）
+  };
+  var GROUND_QUOTA = {
+    pot: { code: '2-369', name: '端子箱安装 户内' },
+    busbar: { code: '2-830', name: '接地母线敷设 户内接地母线敷设' },
+    sys: { code: '2-895', name: '接地系统测试 接地网' },
+    down: { code: '2-880', name: '避雷引下线敷设 利用建筑物主筋引下' },
+    ring: { code: '2-885', name: '避雷网安装 均压环敷设 利用圈梁钢筋' },
+    rod: { code: '2-824', name: '接地极（板）制作、安装 角钢接地极 普通土' },
+    test: { code: '2-881', name: '避雷引下线敷设 断接卡子制作、安装' }
+  };
+  var GROUND_TYPE_CN = {
+    pot: '等电位', busbar: '接地母线', sys: '接地装置', down: '引下线',
+    ring: '均压环/避雷网', rod: '接地极', test: '断接卡/测试点'
+  };
+  var GROUND_UNIT = { pot: '台', busbar: 'm', sys: '系统', down: 'm', ring: 'm', rod: '根', test: '套' };
+
+  // ---------- 母线：低压封闭式插接母线槽 2-229~2-233 / 分线箱 2-234~2-237 ----------
+  var BUSWAY_TIERS = [
+    { max: 400, code: '2-229', label: '400A以内' },
+    { max: 800, code: '2-230', label: '800A以内' },
+    { max: 1250, code: '2-231', label: '1250A以内' },
+    { max: 2000, code: '2-232', label: '2000A以内' },
+    { max: 4000, code: '2-233', label: '4000A以内' }
+  ];
+  var BUSBOX_TIERS = [
+    { max: 100, code: '2-234', label: '100A以内' },
+    { max: 300, code: '2-235', label: '300A以内' },
+    { max: 600, code: '2-236', label: '600A以内' },
+    { max: 1000, code: '2-237', label: '1000A以内' }
+  ];
+  var BUS_LIST = { busway: '030403006', box: '030403007' }; // 低压封闭式插接母线槽 / 始端箱、分线箱
+
   // ============================================================
   // 分类识别
   // ============================================================
@@ -298,6 +339,10 @@
     if (isOutlet(name)) return 'outlet';
     // 照明开关、按钮（独立器具；在配电箱之前，"开关箱/开关柜"已在 isLightSwitch 排除）
     if (isButton(name) || isLightSwitch(name)) return 'switchBtn';
+    // 防雷接地（等电位端子箱/接地母线/接地装置/引下线/均压环/避雷网/接地极/断接卡）——须在箱类、母线之前
+    if (isGroundWork(name) && parseGroundType(name)) return 'ground';
+    // 母线（母线槽/母线箱/插接箱）——须在箱类之前
+    if (isBusWork(name)) return 'bus';
     // 配电箱（柜）：在灯具/电缆关键词之前识别（"插座箱"等箱体设备归此）
     var boxInfo = identifyBox(name);
     if (boxInfo) return boxInfo.isCabinet ? 'boxCabinet' : 'box';
@@ -438,6 +483,47 @@
   }
   function parseBtnEx(name) { return /防爆/.test(name) ? 'ex' : 'normal'; }
   function parseBtnLay(name) { return /暗装|暗敷|暗插|嵌墙|暗$/.test(name) ? 'concealed' : 'surface'; }
+
+  /* ---------- 防雷接地 / 母线 识别 ---------- */
+  // 防雷接地关键词（不含"接地母线"以外的普通"接地线/接地跨接"，避免误吞配线）
+  function isGroundWork(name) {
+    if (!name) return false;
+    return /等电位|接地母线|接地装置|接地网|接地极|引下线|均压|避雷网|避雷带|闪接带|断接卡|接地测试|测试点|测试箱|测试板|扁钢|圆钢/.test(name);
+  }
+  // 防雷接地子类型（顺序即优先级）
+  function parseGroundType(name) {
+    if (!name) return '';
+    if (/等电位/.test(name)) return 'pot';
+    if (/接地极/.test(name)) return 'rod';
+    if (/接地装置|接地网|接地系统测试/.test(name)) return 'sys';
+    if (/断接卡|测试点|测试箱|测试板|断接箱/.test(name)) return 'test';
+    if (/引下线/.test(name)) return 'down';
+    if (/接地母线|扁钢/.test(name)) return 'busbar';
+    if (/均压|避雷网|避雷带|闪接带|圆钢/.test(name)) return 'ring';
+    return '';
+  }
+  // 避雷网（计φ10圆钢主材）/ 均压环（不计主材）
+  function parseGroundRing(name) {
+    return /均压/.test(name) && !/避雷网|避雷带|闪接带|圆钢/.test(name) ? 'ring' : 'mesh';
+  }
+  // 母线：母线槽/母线（排除接地母线）；母线箱/插接箱/始端箱
+  function isBusWork(name) {
+    if (!name) return false;
+    if (/接地母线/.test(name)) return false;
+    return /母线/.test(name) || /插接箱|始端箱/.test(name);
+  }
+  function parseBusType(name) {
+    return /母线箱|插接箱|始端箱|分线箱|进线箱/.test(name) ? 'box' : 'busway';
+  }
+  // 母线额定电流（A）
+  function parseBusAmp(name) {
+    if (!name) return null;
+    var m = name.match(/(\d{2,5})\s*(?:A|a)(?![A-Za-z])/);
+    if (m) return parseInt(m[1], 10);
+    m = name.match(/(?:母线|插接箱|始端箱|分线箱|母线箱)[^\d]{0,8}(\d{2,5})/);
+    if (m) return parseInt(m[1], 10);
+    return null;
+  }
 
   // ---------- 材质（铜/铝）----------
   var ALU_MODEL_RE = /(YJLV|VLV|YJLHV|JLHV|YHLV|JKLYJ|JKLJ|NRLH|WLH|BLV|BLX)/i;
@@ -875,6 +961,34 @@
       };
     }
 
+    /* ---------- 防雷接地 ---------- */
+    if (it.category === 'ground') {
+      var gq = GROUND_QUOTA[it.gType];
+      if (!gq) return { code: '', name: '', inferred: false };
+      return { code: gq.code, name: gq.name, inferred: false };
+    }
+
+    /* ---------- 母线 ---------- */
+    if (it.category === 'bus') {
+      var tiersB = (it.bType === 'box') ? BUSBOX_TIERS : BUSWAY_TIERS;
+      var ampB = it.busAmp;
+      var idxB = -1, tb;
+      if (it.busTier) {
+        for (tb = 0; tb < tiersB.length; tb++) if (tiersB[tb].max === it.busTier) idxB = tb;
+      }
+      if (idxB < 0 && ampB !== null) idxB = tierIndex(tiersB.map(function (t) { return t.max; }), ampB);
+      if (idxB < 0) {
+        return it.bType === 'box'
+          ? { code: '2-234', name: '封闭母线槽分线箱安装 分线箱100A以内', inferred: true, noTier: true }
+          : { code: '2-229', name: '低压封闭式插接母线槽安装 每相电流400A以内', inferred: true, noTier: true };
+      }
+      var overB = (ampB !== null && ampB > tiersB[tiersB.length - 1].max);
+      if (it.bType === 'box') {
+        return { code: tiersB[idxB].code, name: '封闭母线槽分线箱安装 分线箱' + tiersB[idxB].label, inferred: overB, overRange: overB };
+      }
+      return { code: tiersB[idxB].code, name: '低压封闭式插接母线槽安装 每相电流' + tiersB[idxB].label, inferred: overB, overRange: overB };
+    }
+
     return { code: '', name: '', inferred: false };
   }
 
@@ -1171,6 +1285,58 @@
       }
       return { price: pv15, source: 'market', basis: '单相插座15A ' + h + '孔 ' + (it.layMode === 'surface' ? '明装' : '暗装') + '，' + info + '信息价缺项，按国产中高档市场价（除税）' };
     }
+    // ---------- 防雷接地 ----------
+    if (it.category === 'ground') {
+      var gt = it.gType;
+      // 等电位端子箱（清单030410007 / 定额2-369）：局部45元、总等电位220元
+      if (gt === 'pot') {
+        var isMain = (it.potKind === 'main');
+        return {
+          price: isMain ? (e.potMain || 220) : (e.potLocal || 45),
+          source: 'market',
+          basis: (isMain ? '总等电位端子箱（MEB）' : '局部等电位端子箱（LEB，TD28等）') + '，天津' + info + '信息价缺项，按国产中高档市场价（除税）'
+        };
+      }
+      // 接地母线（清单030410002 / 定额2-830）：镀锌扁钢-40×4 5.473元/m
+      if (gt === 'busbar') {
+        return {
+          price: e.groundBusbar || 5.473,
+          source: 'market',
+          basis: '镀锌扁钢 -40×4 接地母线（理论重量1.256kg/m）综合价5.473元/m（除税），天津' + info + '信息价无镀锌扁钢，按市场价'
+        };
+      }
+      // 避雷网（定额2-885）：主材按φ10圆钢信息价折算；均压环不计主材
+      if (gt === 'ring' && it.gRingKind === 'mesh') {
+        var rs = e.roundSteel10 || 3394.35;
+        return {
+          price: Math.round(rs * 0.617 / 1000 * 100) / 100,
+          source: 'official',
+          basis: '天津' + info + '信息价 圆钢HPB300 D10 3835.61元/t（含税）÷1.13=' + rs.toFixed(2) + '元/t（除税）×φ10理论重量0.617kg/m'
+        };
+      }
+      // 接地装置/引下线/接地极/断接卡/均压环：定额工作内容已含，不计主材
+      return { price: null, source: 'none' };
+    }
+
+    // ---------- 母线 ----------
+    if (it.category === 'bus') {
+      if (it.bType === 'box') {
+        return {
+          price: e.busBox || 1946,
+          source: 'market',
+          basis: '封闭母线槽分线箱（插接箱' + (it.busAmp ? ' ' + it.busAmp + 'A' : '') + '）国产中高档市场价（除税），天津' + info + '信息价缺项'
+        };
+      }
+      if (it.busAmp === null) return null; // 未识别额定电流，标待询价
+      var bAmp = it.busAmp;
+      var bPrice = Math.round(bAmp * 3 / 1.13 * 100) / 100;
+      return {
+        price: bPrice,
+        source: 'market',
+        basis: '低压封闭式插接母线槽 ' + bAmp + 'A，主材按额定电流×3元/A÷1.13除税计入（' + bAmp + '×3÷1.13=' + bPrice.toFixed(2) + '元/m）'
+      };
+    }
+
     // ---------- 灯具（成套灯具信息价缺项，均按国产中高档市场价；LED灯管/灯口除外）----------
     var lampMkt = function (v, label) {
       return { price: v, source: 'market', basis: label + '，信息价仅有LED灯管/灯口，成套灯具按国产中高档市场价（除税）' };
@@ -1245,6 +1411,7 @@
     lampCommon: '普通灯', lampDecor: '装饰灯', lampFluor: '荧光灯',
     lampFactory: '工厂灯', lampMedical: '医疗专用灯', outlet: '插座',
     switchBtn: '照明开关、按钮',
+    ground: '防雷接地', bus: '母线',
     box: '配电箱', boxCabinet: '配电柜'
   };
   var CAT_WORK = {
@@ -1261,6 +1428,8 @@
     lampMedical: '医院专用灯具安装、接线、固定、调试及辅助工作',
     outlet: '测位画线、打眼、清扫盒子、装插座、接线、装盖及辅助工作',
     switchBtn: '测位画线、打眼、清扫盒子、装开关（按钮）、接线、装盖及辅助工作',
+    ground: '平直、下料、测位、打眼、埋卡子、焊接、固定、刷漆、接地电阻测试及辅助工作',
+    bus: '开箱、检查、测位、划线、打眼、固定、连接、接地、刷漆及辅助工作',
     box: '成套配电箱购置、运输、安装、接地、接线、调试及辅助工作',
     boxCabinet: '成套配电柜（屏）购置、运输、安装、接地、接线、调试及辅助工作'
   };
@@ -1300,6 +1469,24 @@
       if (it.swType === 'surface') return '扳把开关 明装';
       if (it.swType === 'sealed') return '密闭开关 5A以内';
       return '扳式暗开关 ' + (it.swCtrl === 'double' ? '双控' : '单控') + ' ' + SW_TIER_CN[it.swGang || 1];
+    }
+    // 防雷接地
+    if (it.category === 'ground') {
+      var gspec = {
+        pot: (it.potKind === 'main' ? '总等电位端子箱（MEB）' : '局部等电位端子箱（LEB）'),
+        busbar: '镀锌扁钢 -40×4 接地母线',
+        sys: '接地网 接地系统测试',
+        down: '利用建筑物主筋引下',
+        ring: (it.gRingKind === 'mesh' ? '避雷网 φ10热镀锌圆钢' : '均压环 利用圈梁钢筋'),
+        rod: '角钢接地极 普通土',
+        test: '断接卡子制作安装'
+      };
+      return gspec[it.gType] || '';
+    }
+    // 母线
+    if (it.category === 'bus') {
+      if (it.bType === 'box') return '封闭母线槽分线箱（插接箱）' + (it.busAmp ? ' ' + it.busAmp + 'A' : ' 型号未注');
+      return '低压封闭式插接母线槽' + (it.busAmp ? ' 每相电流' + it.busAmp + 'A' : ' 电流未注');
     }
     var parts = [];
     if (it.model) parts.push(it.model);
@@ -1365,6 +1552,19 @@
       var nameFloor = name.indexOf('落地') >= 0;
       it.form = (it.isCabinet || nameFloor) ? 'floor' : 'wall';
       it.perimeterTier = (it.isCabinet || nameFloor) ? '' : BOX_DEFAULT_TIER;
+    }
+
+    if (category === 'ground') {
+      it.gType = parseGroundType(name);
+      it.gRingKind = it.gType === 'ring' ? parseGroundRing(name) : '';
+      it.potKind = /总等电位|MEB/i.test(name) ? 'main' : 'local';
+      it.listCode = GROUND_LIST[it.gType] || '';
+    }
+    if (category === 'bus') {
+      it.bType = parseBusType(name);
+      it.busAmp = parseBusAmp(name);
+      it.busTier = null; // 行内选择的电流档上限（用于定额），主材价仍按实际额定电流
+      it.listCode = BUS_LIST[it.bType] || '';
     }
 
     var specInfo = parseSpec(name);
@@ -1433,7 +1633,12 @@
     if (it.category === 'lampDecor' && !quota.code) {
       w.push('装饰灯已套清单030413002；装饰灯具（筒灯/射灯/花灯/标志诱导灯等）安装子目差异大，请按2020基价第二册装饰灯具章节手选定额');
     }
+    if (it.category === 'ground') {
+      if (it.gType === 'down') w.push('定额2-880以"根"为单位（清单030410003按延长米），请按引下线根数核对定额工程量');
+      if (it.gType === 'test') w.push('定额2-881以"10套"为单位，清单按延长米计列时请换算');
+    }
     if (quota.noTier) {
+      if (it.category === 'bus') w.push('未识别母线/分线箱额定电流(A)，暂按最小档计，请核对名称（如 母线 1000A）');
       if (it.category === 'control') w.push('未识别控制电缆芯数，请核对名称（如 KVV-7×1.5）');
       if (it.category === 'conduit') w.push('未识别配管公称直径(DN)，请核对名称（如 JDG20 / SC25）');
       if (it.category === 'wiring') w.push('未识别导线截面/芯数，请核对名称（如 BV-2.5 / RVS-2×1.5）');
@@ -1472,8 +1677,10 @@
       it.qtyWarn = false;
       if (isNaN(qty) || qty <= 0) { qty = 1; it.qtyWarn = true; }
       it.quantity = qty;
-      // 单位：电缆/配管/配线/桥架=m；电缆头/插座=个；灯具=套；配电箱（柜）=台
+      // 单位：电缆/配管/配线/桥架/接地母线/均压环/引下线=m；电缆头/插座/开关按钮=个；灯具=套；配电箱（柜）/母线箱/等电位端子箱=台
       if (it.category === 'box' || it.category === 'boxCabinet') it.unit = '台';
+      else if (it.category === 'bus') it.unit = (it.bType === 'box') ? '台' : 'm';
+      else if (it.category === 'ground') it.unit = GROUND_UNIT[it.gType] || 'm';
       else if (/^lamp/.test(it.category)) it.unit = '套';
       else if (it.category === 'head' || it.category === 'outlet' || it.category === 'switchBtn') it.unit = '个';
       else it.unit = 'm';
@@ -1502,7 +1709,7 @@
         it.price = null;
         // 配电箱（柜）价格空缺：标"未计价"；控制电缆/电缆头不自动询价；其余该计价但查不到（软线/装饰灯未识别）标"待询价"
         var pricedCats = { power: 1, conduit: 1, wiring: 1, bridge: 1, outlet: 1, switchBtn: 1,
-          lampCommon: 1, lampFluor: 1, lampFactory: 1, lampMedical: 1, lampDecor: 1 };
+          lampCommon: 1, lampFluor: 1, lampFactory: 1, lampMedical: 1, lampDecor: 1, ground: 1, bus: 1 };
         it.priceSource = pricedCats[it.category] ? 'pending' : 'na';
         it.priceBasis = '';
       }
@@ -1531,7 +1738,7 @@
     } else {
       it.price = null;
       var cats = { power: 1, conduit: 1, wiring: 1, bridge: 1, outlet: 1, switchBtn: 1,
-        lampCommon: 1, lampFluor: 1, lampFactory: 1, lampMedical: 1, lampDecor: 1 };
+        lampCommon: 1, lampFluor: 1, lampFactory: 1, lampMedical: 1, lampDecor: 1, ground: 1, bus: 1 };
       it.priceSource = cats[it.category] ? 'pending' : 'na';
       it.priceBasis = '';
     }
@@ -1552,9 +1759,10 @@
   // 渲染
   // ============================================================
   var PRICED_CATS = { power: 1, conduit: 1, wiring: 1, bridge: 1, outlet: 1, switchBtn: 1,
-    lampCommon: 1, lampFluor: 1, lampFactory: 1, lampMedical: 1, lampDecor: 1 };
+    lampCommon: 1, lampFluor: 1, lampFactory: 1, lampMedical: 1, lampDecor: 1, ground: 1, bus: 1 };
   function priceText(item) {
     if (!PRICED_CATS[item.category]) return '<span class="tag tag-na">未计价</span>';
+    if (item.priceSource === 'none') return '<span class="tag tag-na" title="该项定额子目不计算主材费（工作内容已含）">无主材</span>';
     if (item.price === null) return '<span class="tag tag-pending">待询价</span>';
     var basisTip = item.priceBasis ? ' title="' + String(item.priceBasis).replace(/"/g, '&quot;') + '"' : '';
     if (item.priceSource === 'estimated') return '<span class="tag tag-est" ' + basisTip + '>估</span> <span ' + basisTip + '>¥' + item.price.toFixed(2) + '</span>';
@@ -1632,6 +1840,30 @@
       }
       return html + '</div>';
     }
+    // 防雷接地：子类型（等电位/接地母线/接地装置/引下线/均压环·避雷网/接地极/断接卡）+ 等电位总/局部、均压环/避雷网
+    if (it.category === 'ground') {
+      var gopts = opt('pot', it.gType, '等电位') + opt('busbar', it.gType, '接地母线') +
+        opt('sys', it.gType, '接地装置') + opt('down', it.gType, '引下线') +
+        opt('ring', it.gType, '均压环/避雷网') + opt('rod', it.gType, '接地极') +
+        opt('test', it.gType, '断接卡/测试点');
+      var ghtml = '<div class="lay-stack">' + sel('gType', it._i, gopts, 'lay-ground');
+      if (it.gType === 'pot') {
+        ghtml += sel('potKind', it._i, opt('local', it.potKind, '局部等电位') + opt('main', it.potKind, '总等电位'), 'lay-ground');
+      }
+      if (it.gType === 'ring') {
+        ghtml += sel('gRing', it._i, opt('ring', it.gRingKind, '均压环(不计主材)') + opt('mesh', it.gRingKind, '避雷网(计圆钢)'), 'lay-ground');
+      }
+      return ghtml + '</div>';
+    }
+    // 母线：额定电流分档（母线槽400/800/1250/2000/4000A；分线箱100/300/600/1000A）
+    if (it.category === 'bus') {
+      var btiers = it.bType === 'box' ? BUSBOX_TIERS : BUSWAY_TIERS;
+      var curB = it.busTier;
+      if (!curB && it.busAmp !== null) curB = btiers[tierIndex(btiers.map(function (t) { return t.max; }), it.busAmp)].max;
+      var bh = curB ? '' : opt('', '', '请选择电流档');
+      btiers.forEach(function (t) { bh += opt(String(t.max), String(curB), t.label); });
+      return sel('busTier', it._i, bh, 'lay-bus');
+    }
     // 荧光灯：成套/组装 + 安装方式 + 管数（平板灯按周长，无下拉）
     if (it.category === 'lampFluor' && !it.fluorPanel) {
       var kindSel = sel('flKind', it._i,
@@ -1697,6 +1929,19 @@
       if (it.swType === 'sealed') return '密闭开关 5A以内';
       return '扳式暗开关 ' + (it.swCtrl === 'double' ? '双控' : '单控') + ' ' + SW_TIER_CN[it.swGang || 1];
     }
+    if (it.category === 'ground') {
+      var gsc = {
+        pot: (it.potKind === 'main' ? '总等电位' : '局部等电位'),
+        busbar: '-40×4 镀锌扁钢',
+        sys: '接地网',
+        down: '主筋引下',
+        ring: (it.gRingKind === 'mesh' ? 'φ10圆钢' : '圈梁钢筋'),
+        rod: '角钢 L50×5',
+        test: '断接卡子'
+      };
+      return gsc[it.gType] || '—';
+    }
+    if (it.category === 'bus') return it.busAmp ? it.busAmp + 'A' : '—';
     return escapeHtml(it.spec || '—');
   }
 
@@ -1727,7 +1972,7 @@
 
     var cat = {};
     data.forEach(function (d) { cat[d.category] = (cat[d.category] || 0) + 1; });
-    var pending = data.filter(function (d) { return PRICED_CATS[d.category] && d.price === null; }).length;
+    var pending = data.filter(function (d) { return PRICED_CATS[d.category] && d.price === null && d.priceSource !== 'none'; }).length;
     var total = data.reduce(function (s, d) { return s + (d.price === null ? 0 : d.price * d.quantity); }, 0);
 
     document.getElementById('totalCount').textContent = data.length;
@@ -1774,6 +2019,28 @@
         if (act === 'btnKind') it.btnKind = sel.value;
         if (act === 'btnEx') it.btnEx = sel.value;
         if (act === 'btnLay') { it.btnLay = sel.value; }
+        // 防雷接地：子类型 / 等电位等级 / 均压环·避雷网
+        if (act === 'gType') {
+          it.gType = sel.value;
+          it.listCode = GROUND_LIST[it.gType] || '';
+          it.unit = GROUND_UNIT[it.gType] || 'm';
+          if (it.gType === 'ring' && !it.gRingKind) it.gRingKind = 'mesh';
+          needReprice = true;
+        }
+        if (act === 'potKind') { it.potKind = sel.value; needReprice = true; }
+        if (act === 'gRing') { it.gRingKind = sel.value; needReprice = true; }
+        // 母线：额定电流档（仅当用户实际改档时才同步主材电流，避免重复点选误改价格）
+        if (act === 'busTier') {
+          var newTierB = sel.value === '' ? null : parseInt(sel.value, 10);
+          var tiersH = (it.bType === 'box') ? BUSBOX_TIERS : BUSWAY_TIERS;
+          var oldTierB = it.busTier;
+          if (!oldTierB && it.busAmp !== null) oldTierB = tiersH[tierIndex(tiersH.map(function (t) { return t.max; }), it.busAmp)].max;
+          if (newTierB !== oldTierB) {
+            it.busTier = newTierB;
+            if (newTierB !== null) it.busAmp = newTierB;
+            needReprice = true;
+          }
+        }
         if (act === 'swType' || act === 'swCtrl' || act === 'swGang' ||
             act === 'btnKind' || act === 'btnEx' || act === 'btnLay' ||
             act === 'flKind' || act === 'flMount' || act === 'flTube' || act === 'facMount') needReprice = true;
