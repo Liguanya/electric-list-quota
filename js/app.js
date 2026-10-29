@@ -171,6 +171,18 @@
   // 吸顶灯具：灯罩周长 mm 上限
   var LAMP_CEIL_PERIM = [800, 1100, Infinity];
   var LAMP_CEIL_CODES = ['2-1539', '2-1540', '2-1541'];
+  // 装饰灯具 五、标志、诱导装饰灯安装（2-1720~1723，示意图号171~174）
+  // 依据：DBD29-302-2020 第二册 第十三章 四、装饰灯具安装 5.标志、诱导装饰灯安装
+  var LAMP_SIGN_CODES = { top: '2-1720', rod: '2-1721', wall: '2-1722', embed: '2-1723' };
+  var LAMP_SIGN_NAME = { top: '吸顶式', rod: '吊杆式', wall: '墙壁式', embed: '嵌入式' };
+  // 应急照明/疏散指示/安全出口/标志/诱导灯 → 安装方式（名称未注明时按墙壁式，双头应急灯多为壁挂）
+  function parseSignMount(name) {
+    var n = name || '';
+    if (/吸顶/.test(n)) return 'top';
+    if (/吊杆/.test(n)) return 'rod';
+    if (/嵌入/.test(n)) return 'embed';
+    return 'wall';
+  }
   // 其他普通灯具（关键字 → 固定子目）
   // 注意：更具体的"座灯头"必须排在泛化的"灯头"之前
   var LAMP_PLAIN = [
@@ -323,7 +335,7 @@
       return 'lampFluor';
     }
     // 装饰灯
-    if (/筒灯|射灯|艺术|花灯|蜡烛灯|点光源|无主灯|标志灯|诱导灯|疏散|安全出口|装饰灯|挂片|串珠|吊式艺术|吸顶艺术|草坪灯|水下灯|几何形状/.test(name)) return 'lampDecor';
+    if (/筒灯|射灯|艺术|花灯|蜡烛灯|点光源|无主灯|标志灯|诱导灯|疏散|安全出口|应急照明|应急灯|应急疏散|消防应急|出口指示|装饰灯|挂片|串珠|吊式艺术|吸顶艺术|草坪灯|水下灯|几何形状/.test(name)) return 'lampDecor';
     // 普通灯（含各类吸顶/吊灯/壁灯/灯头/座灯/弯脖/圆球/半圆/简易LED），以及其他含"灯"兜底
     if (/灯|光源/.test(name)) return 'lampCommon';
     return '';
@@ -358,12 +370,12 @@
     if (/(?:^|[^A-Za-z])(?:WDZN?[ABCDE]?|ZN|Z[ABC]?|ZR|NH)?[-\s]?(?:BVVB|BVR|BYJ|BV)(?:[^A-Za-z]|$)/i.test(name)) return 'wiring';
     if (/配线|管内穿线|导线|穿线/.test(name)) return 'wiring';
     // 配管：JDG/KBG/电线管/镀锌钢管/焊接钢管，或独立的 SC/RC 代号
-    if (/JDG|KBG|电线管|镀锌钢管|焊接钢管|配管/.test(name)) return 'conduit';
-    if (/(?:^|[^A-Za-z])(?:SC|RC)\s*[-\s]?\d{2,3}/.test(name)) return 'conduit';
+    if (/JDG|KBG|电线管|镀锌钢管|焊接钢管|配管|刚性阻燃管|半硬质塑料管|阻燃管|PVC管|塑料管/.test(name)) return 'conduit';
+    if (/(?:^|[^A-Za-z])(?:SC|RC|PC|FPC|MT|CP)\s*[-\s]?\d{2,3}/.test(name)) return 'conduit';
     if (/电力电缆|电缆/.test(name)) return 'power';
     // 兜底：纯型号写法（如 WDZ-YJY-0.6/1kV-5×16）
     var pm = name.match(MODEL_RE);
-    if (pm && /^(?:YJLHV|JLHV|YJLV|YJY|YJV|VLV|VV|BTT[ZV]|NG[AB]T[YZ])/i.test(stripPrefix(pm[0]))) return 'power';
+    if (pm && /^(?:YJLHV|JLHV|YJLV|YJY|YJV|VLV|VV|BTTRZ|BTT[ZV]R?Z?|RTT[YZ]|RTTYZ|YTTWY?|BTLY|NG[AB]T[YZ])/i.test(stripPrefix(pm[0]))) return 'power';
     return '';
   }
   // 配线更精确的型号判定（供 classify 与特征共用）
@@ -379,6 +391,14 @@
     var d = name.match(/[ΦφØ]?\s*(\d{2,4})\s*mm\s*(?:方形|正方形)/);
     if (d) return parseInt(d[1], 10) * 4;
     return null;
+  }
+  // 灯具功率（W）：1x9W / 9W / 2x3W（取单只功率）
+  function parseLampWatt(name) {
+    var t = String(name || '');
+    var m = t.match(/(\d+(?:\.\d+)?)\s*[wW](?![a-zA-Z])/);
+    if (m) return parseFloat(m[1]);
+    m = t.match(/[x×*]\s*(\d+(?:\.\d+)?)\s*[wW]/);
+    return m ? parseFloat(m[1]) : 0;
   }
   // 是否为LED平板灯（荧光灯清单、但按吸顶灯具周长套定额）
   function isPanelLamp(name) { return /平板灯/.test(name) && !/长条|格栅|支架/.test(name); }
@@ -488,7 +508,7 @@
   // 防雷接地关键词（不含"接地母线"以外的普通"接地线/接地跨接"，避免误吞配线）
   function isGroundWork(name) {
     if (!name) return false;
-    return /等电位|接地母线|接地装置|接地网|接地极|引下线|均压|避雷网|避雷带|闪接带|断接卡|接地测试|测试点|测试箱|测试板|扁钢|圆钢/.test(name);
+    return /等电位|接地母线|接地装置|接地网|接地极|引下线|主筋引下|均压|避雷网|避雷带|闪接带|断接卡|接地测试|测试点|测试箱|测试板|扁钢|圆钢/.test(name);
   }
   // 防雷接地子类型（顺序即优先级）
   function parseGroundType(name) {
@@ -497,7 +517,7 @@
     if (/接地极/.test(name)) return 'rod';
     if (/接地装置|接地网|接地系统测试/.test(name)) return 'sys';
     if (/断接卡|测试点|测试箱|测试板|断接箱/.test(name)) return 'test';
-    if (/引下线/.test(name)) return 'down';
+    if (/引下线|主筋引下/.test(name)) return 'down';
     if (/接地母线|扁钢/.test(name)) return 'busbar';
     if (/均压|避雷网|避雷带|闪接带|圆钢/.test(name)) return 'ring';
     return '';
@@ -534,7 +554,7 @@
   }
 
   // ---------- 型号 ----------
-  var MODEL_RE = /(?:WDZN[ABCDE]?|WDZ[ABCDE]?|ZN|Z[ABCDE]|ZR|NH)?[-\s]?(?:KVVRP|KVVP2?|KVV|DJY[PV]+[VPR2]*|KYJ[VY][PR2]*|YJLHV(?:22|23|32)?|JLHV(?:22|23)?|YJLV(?:22|23|32)?|YJY(?:22|23|32)?|YJV(?:22|23|32)?|VLV(?:22|23|32)?|VV(?:22|23|32)?|BTT[ZV]|NG[-\s]?[AB]T[YZ])/i;
+  var MODEL_RE = /(?:WDZN[ABCDE]?|WDZ[ABCDE]?|ZN|Z[ABCDE]|ZR|NH)?[-\s]?(?:KVVRP|KVVP2?|KVV|DJY[PV]+[VPR2]*|KYJ[VY][PR2]*|YJLHV(?:22|23|32)?|JLHV(?:22|23)?|YJLV(?:22|23|32)?|YJY(?:22|23|32)?|YJV(?:22|23|32)?|VLV(?:22|23|32)?|VV(?:22|23|32)?|BTTRZ|BTT[ZV]R?Z?|RTT[YZ]|RTTYZ|YTTWY?|BTLY|NG[-\s]?[AB]T[YZ])/i;
   function extractModel(name) {
     var m = name.match(MODEL_RE);
     return m ? m[0].toUpperCase().replace(/^[-\s]+/, '') : '';
@@ -554,7 +574,7 @@
     return m[0].replace(/\s+/g, '').toUpperCase();
   }
   function isHighVoltage(name) {
-    return /10\s*k\s*v|8\.7\s*\/\s*15|35\s*k\s*v|高压/.test(name);
+    return /10\s*k\s*v|8\.7\s*\/\s*15|35\s*k\s*v|高压/i.test(name);
   }
 
   // ---------- 规格（芯数×截面[+芯数×截面]）----------
@@ -869,6 +889,27 @@
       return { code: '2-1785', name: '医院灯具安装 紫外线杀菌灯', inferred: false };
     }
 
+    if (it.category === 'lampDecor') {
+      var dnm = it.name || '';
+      // 应急照明 / 疏散指示 / 安全出口 / 标志 / 诱导灯 → 装饰灯具 5.标志、诱导装饰灯安装（2-1720~1723）
+      if (/应急|疏散|安全出口|标志灯|诱导|出口指示/.test(dnm)) {
+        var sm = parseSignMount(dnm);
+        return {
+          code: LAMP_SIGN_CODES[sm],
+          name: '标志、诱导装饰灯安装 ' + LAMP_SIGN_NAME[sm] + '（示意图号171~174）',
+          inferred: false
+        };
+      }
+      // 筒灯 → 普通灯具 1.吸顶灯具（灯罩周长分档 2-1539~1541；天津2020基价第二册无筒灯专用子目）
+      if (/筒灯/.test(dnm)) {
+        var dp = (it.lampPerimeter === null || it.lampPerimeter === undefined) ? 0 : it.lampPerimeter;
+        var dci = dp <= 800 ? 0 : (dp <= 1100 ? 1 : 2);
+        var dpLabel = dci === 0 ? '800mm以内' : (dci === 1 ? '1100mm以内' : '1100mm以外');
+        return { code: LAMP_CEIL_CODES[dci], name: '吸顶灯具安装（筒灯）灯罩周长' + dpLabel, inferred: false };
+      }
+      return { code: '', name: '', inferred: false };
+    }
+
     /* ---------- 插座 ---------- */
     if (it.category === 'outlet') {
       var on = it.name || '';
@@ -1021,6 +1062,70 @@
       .replace(/^(?:WDZN?[ABCDE]?|ZN|Z[ABCDE]?|ZR|NH)/, '')
       .replace(/(?:22|23|32)$/, '');
   }
+
+  // ---------- 矿物绝缘电缆 / 电缆头 / 控制电缆 主材价（2026-10-29 新增）----------
+  // 天津信息价无矿物绝缘电缆、电缆头、控制电缆条目 → 按合理市场价计入（source=market）
+  var MINERAL_RE = /^(?:BTTRZ|BTT[ZV]R?Z?|RTT[YZ]|RTTYZ|YTTWY?|BTLY|NG-?[AB]T[YZ])/;
+  function isMineralModel(model) { return MINERAL_RE.test(normModel(model)); }
+  // 多芯折算系数：1~6 芯，6 表示 6 芯及以上
+  function coreCoefOf(tbl, n) {
+    if (!tbl) return 1;
+    var k = Math.max(1, Math.min(6, Number(n) || 1));
+    return tbl[k] !== undefined ? tbl[k] : (tbl[6] !== undefined ? tbl[6] : 1);
+  }
+  // 控制电缆型号系数（屏蔽/铠装/交联/软结构）
+  function cableModelCoef(name, cfg) {
+    var n = String(name || '').toUpperCase();
+    if (/KVVP2|KVVP|DJYP|屏蔽/.test(n)) return (cfg.modelCoef || {}).shield || 1.12;
+    if (/KVVRP/.test(n)) return (cfg.modelCoef || {}).shieldSoft || 1.15;
+    if (/KYJV|交联/.test(n)) return (cfg.modelCoef || {}).xlpe || 1.15;
+    if (/(?:22|23|32)(?!\d)|铠装/.test(n)) return (cfg.modelCoef || {}).armour || 1.25;
+    if (/RVV|RVS|RYS|软/.test(n)) return (cfg.modelCoef || {}).soft || 0.95;
+    return 1;
+  }
+  // 控制电缆 / 多芯软导线：按"铜重 + 绝缘护套加工"模型计市场价
+  function controlCablePrice(it, e, label) {
+    var cfg = (e || {}).controlCable;
+    if (!cfg) return null;
+    var n = it.totalCores || 0;
+    var s = it.section;
+    if (!n || s === null || s === undefined || isNaN(s)) return null;
+    var perCore = s * cfg.copperKgPerMm2 * cfg.copperPrice + cfg.insulBase + cfg.insulPerMm2 * s;
+    var k = cableModelCoef(it.name, cfg);
+    var sheath = cfg.sheathBase + cfg.sheathPerCore * n;
+    var price = Math.round((n * perCore + sheath) * k * 100) / 100;
+    return {
+      price: price,
+      source: 'market',
+      basis: (label || '控制电缆') + ' ' + n + '芯×' + s + 'mm²：铜重' + (n * s * cfg.copperKgPerMm2).toFixed(3) +
+        'kg/m×' + cfg.copperPrice + '元/kg＋绝缘护套及加工（' + sheath.toFixed(2) + '元/m），型号系数' + k +
+        ' → ' + price.toFixed(2) + '元/m，' + cfg.brand + '市场价（除税）'
+    };
+  }
+  // 矿物绝缘电缆（BTTZ/BTTRZ/RTTZ/BTLY 等）：单芯市场价表 × 芯数 × 多芯共护套折算系数
+  function lookupMineralPrice(periodKey, it) {
+    if (!isMineralModel(it.model)) return null;
+    var e = elecTable(periodKey);
+    if (!e || !e.mineralCable) return null;
+    if (it.section === null || isNaN(it.section)) return null;
+    var cfg = e.mineralCable;
+    var r = interpByKey(cfg.single, it.section);
+    if (!r) return null;
+    var n = mainCoresOf(it.cores) || 1;
+    var k = coreCoefOf(cfg.coreCoef, n);
+    var price = Math.round(r.price * n * k * 100) / 100;
+    return {
+      price: price,
+      source: 'market',
+      basis: '矿物绝缘电缆 ' + it.model + ' ' + n + '芯×' + it.section + 'mm²：单芯市场价' + r.price.toFixed(2) +
+        '元/m × ' + n + '芯 × 多芯共护套折算' + k + ' = ' + price.toFixed(2) + '元/m，' + cfg.brand + '，除税' +
+        (r.exact ? '' : '（截面无对应档，按相邻档插值）')
+    };
+  }
+  // 电力电缆主材价：矿物绝缘电缆走专表，其余走信息价库
+  function pricePower(periodKey, it) {
+    return lookupMineralPrice(periodKey, it) || lookupPrice(periodKey, it.material, it.model, it.cores, it.section);
+  }
   function normItem(it) {
     return {
       material: it.material,
@@ -1163,7 +1268,10 @@
             return { price: rr.price, source: 'estimated', basis: 'RVS 2×' + it.section + '无信息价档，按相邻档插值估算，请人工复核' };
           }
         }
-        return null; // KYJY/KYY/RYS 等多芯软导线信息价缺，暂不自动计价（市场价人工询价）
+        // KYJY/KYY/RYS 等多芯软导线：信息价缺项，按"铜重+绝缘护套"模型计合理市场价
+        var swr = controlCablePrice(it, e, '多芯软导线');
+        if (swr) return swr;
+        return null;
       }
       if (it.section === null) return null;
       var model = it.wireModel;
@@ -1314,7 +1422,30 @@
           basis: '天津' + info + '信息价 圆钢HPB300 D10 3835.61元/t（含税）÷1.13=' + rs.toFixed(2) + '元/t（除税）×φ10理论重量0.617kg/m'
         };
       }
-      // 接地装置/引下线/接地极/断接卡/均压环：定额工作内容已含，不计主材
+      // 接地极（角钢L50×5，2.5m/根，理论重量3.77kg/m）
+      if (gt === 'rod') {
+        var kg = 3.77 * 2.5;
+        var ang = (e.groundAngleSteelKg || 4.6);
+        var rodPrice = Math.round(kg * ang * 100) / 100;
+        return {
+          price: rodPrice,
+          source: 'market',
+          basis: '角钢接地极 L50×5，2.5m/根，理论重量3.77kg/m×2.5m=' + kg.toFixed(2) + 'kg × 镀锌角钢市场价' + ang +
+            '元/kg（除税）= ' + rodPrice.toFixed(2) + '元/根'
+        };
+      }
+      // 断接卡子（成品镀锌，含螺栓）
+      if (gt === 'test') {
+        return {
+          price: (e.groundTestCard || 12.0),
+          source: 'market',
+          basis: '断接卡子（成品镀锌，含M12螺栓）市场价（除税）'
+        };
+      }
+      // 引下线/均压环：利用建筑物结构钢筋（属土建专业），不计主材
+      if (gt === 'down' || gt === 'ring') {
+        return { price: null, source: 'none', basis: '利用建筑物结构钢筋（钢筋属土建专业），本项不计主材' };
+      }
       return { price: null, source: 'none' };
     }
 
@@ -1335,6 +1466,47 @@
         source: 'market',
         basis: '低压封闭式插接母线槽 ' + bAmp + 'A，主材按额定电流×3元/A÷1.13除税计入（' + bAmp + '×3÷1.13=' + bPrice.toFixed(2) + '元/m）'
       };
+    }
+
+    // ---------- 电力电缆终端头（1kV/10kV 热缩式成套件，市场价）----------
+    if (it.category === 'head') {
+      if (it.section === null || isNaN(it.section)) return null;
+      var hcfg = e.cableHead;
+      if (!hcfg) return null;
+      var hn = mainCoresOf(it.cores) || 1;
+      // 矿物绝缘电缆终端头（铜护套密封终端）为专用成套件，按专表计
+      if (isMineralModel(it.model) && hcfg.mineral) {
+        var mr = interpByKey(hcfg.mineral, it.section);
+        if (mr) {
+          var mk = hn === 1 ? 1 : Math.round(hn * 0.95 * 100) / 100;
+          var mprice = Math.round(mr.price * mk * 100) / 100;
+          return {
+            price: mprice,
+            source: 'market',
+            basis: '矿物绝缘电缆终端头 ' + it.model + ' ' + hn + '芯×' + it.section + 'mm²：单芯终端' +
+              mr.price.toFixed(2) + '元/个 × ' + (hn === 1 ? '1' : hn + '芯×0.95') + ' = ' + mprice.toFixed(2) +
+              '元/个，' + hcfg.mineralBrand + '（铜护套密封终端成套件，含端子、密封罐、接地），除税'
+          };
+        }
+      }
+      var htab = it.highVoltage ? hcfg.hv : hcfg.lv;
+      var hr = interpByKey(htab, it.section);
+      if (!hr) return null;
+      var hk = coreCoefOf(hcfg.coreCoef, hn);
+      var hprice = Math.round(hr.price * hk * 100) / 100;
+      return {
+        price: hprice,
+        source: 'market',
+        basis: (it.highVoltage ? '10kV' : '1kV') + '户内热（冷）缩式电力电缆终端头 电缆截面' + it.section +
+          'mm²以内：成套件' + hr.price.toFixed(2) + '元/个 × 多芯折算系数' + hk + '（按' + hn + '芯）= ' + hprice.toFixed(2) +
+          '元/个，' + hcfg.brand + '（含铜接线端子、热缩管、接地线），除税'
+      };
+    }
+
+    // ---------- 控制电缆（信息价缺项，按铜重+绝缘护套模型计市场价）----------
+    if (it.category === 'control') {
+      var ccr = controlCablePrice(it, e, '控制电缆');
+      if (ccr) return ccr;
     }
 
     // ---------- 灯具（成套灯具信息价缺项，均按国产中高档市场价；LED灯管/灯口除外）----------
@@ -1374,6 +1546,7 @@
       var ffm = it.factoryMount || parseFactoryMount(it.name || '');
       var fwp = (it.factoryType === 'waterproof' || isWaterproofFactory(it.name || ''));
       var ffv = (fwp ? e.lampFactoryWp : e.lampFactoryHood)[ffm];
+      if (ffv == null) ffv = fwp ? 135.0 : 120.0;
       return lampMkt(ffv, (fwp ? '防水防尘灯' : '工厂罩灯') + ' ' + (fwp ? LAMP_FACTORY_WP_NAME[ffm] : LAMP_FACTORY_HOOD_NAME[ffm]));
     }
     if (it.category === 'lampMedical') {
@@ -1381,23 +1554,48 @@
       if (mq && mq.code && e.lampMedical && e.lampMedical[mq.code] != null) {
         return lampMkt(e.lampMedical[mq.code], mq.name.replace(/^医院灯具安装\s*/, ''));
       }
+      return lampMkt((e.lampMedical || {})['2-1785'] || 180.0, '医院专用灯具（按紫外线杀菌灯档次估）');
     }
     if (it.category === 'lampDecor') {
       var dn = it.name || '';
+      // 应急照明 / 疏散指示 / 安全出口 / 标志 / 诱导灯：按"标志灯"成套市场价（带蓄电池）
+      if (/应急|疏散|安全出口|标志灯|诱导|出口指示/.test(dn)) {
+        var sk = 'other';
+        if (/安全出口/.test(dn)) sk = 'exit';
+        else if (/楼层/.test(dn)) sk = 'floor';
+        else if (/诱导/.test(dn)) sk = 'induce';
+        else if (/疏散|指示/.test(dn)) sk = 'evacuate';
+        else if (/应急/.test(dn)) sk = 'emergency';
+        var sv = (e.lampSign || {})[sk];
+        if (sv == null) sv = 60.0;
+        var sLabel = { exit: '安全出口标志灯', floor: '楼层标志灯', induce: '诱导标志灯', evacuate: '疏散指示灯', emergency: '应急照明灯（双头）', other: '应急标志灯' }[sk];
+        return lampMkt(sv, sLabel + '（成套，带蓄电池）');
+      }
+      // 筒灯：按功率档计（防潮/防水型另加系数）
+      if (/筒灯/.test(dn)) {
+        var dw = parseLampWatt(dn);
+        var dtier = !dw ? '10' : (dw <= 6 ? '6' : (dw <= 10 ? '10' : (dw <= 15 ? '15' : (dw <= 24 ? '24' : '30'))));
+        var dv = (e.lampDownlight || {})[dtier];
+        if (dv == null) dv = 28.0;
+        var damp = /防潮|防水|密闭/.test(dn);
+        if (damp) dv = Math.round(dv * 1.25 * 100) / 100;
+        return lampMkt(dv, 'LED筒灯' + (dw ? ' ' + dw + 'W' : '') + '（' + (dtier === '30' ? '24W以上' : dtier + 'W以内') + (damp ? '，防潮型' : '') + '，成套）');
+      }
       var dk = null;
-      if (/筒灯/.test(dn)) dk = 'downlight';
-      else if (/射灯/.test(dn)) dk = 'spot';
+      if (/射灯/.test(dn)) dk = 'spot';
       else if (/蜡烛|点光源/.test(dn)) dk = 'candle';
       else if (/格栅/.test(dn)) dk = 'grille';
       else if (/无主灯|嵌入/.test(dn)) dk = 'embedded';
-      else if (/标志|诱导|疏散|安全出口/.test(dn)) dk = 'indicator';
       else if (/花灯|艺术/.test(dn)) dk = 'art';
-      if (dk && e.lampDecor && e.lampDecor[dk] != null) {
-        var dlabel = { downlight: 'LED筒灯', spot: 'LED射灯', candle: '蜡烛灯/点光源', grille: '艺术格栅装饰灯', embedded: '嵌入式无主灯', indicator: '疏散指示灯（带蓄电池）', art: '艺术花灯' }[dk];
-        return lampMkt(e.lampDecor[dk], dlabel + '（成套）');
-      }
-      // 装饰灯定额子目待手选，价格也不自动套
-      return null;
+      else if (/草坪灯/.test(dn)) dk = 'lawn';
+      else if (/水下/.test(dn)) dk = 'underwater';
+      else if (/串珠|挂片|几何/.test(dn)) dk = 'bead';
+      if (!dk) dk = 'other';
+      var dv2 = (e.lampDecor || {})[dk];
+      if (dv2 == null) dv2 = (e.lampDecor || {}).other;
+      if (dv2 == null) dv2 = 90.0;
+      var dlabel = { spot: 'LED射灯', candle: '蜡烛灯/点光源', grille: '艺术格栅装饰灯', embedded: '嵌入式无主灯', art: '艺术花灯', lawn: '草坪灯', underwater: '水下艺术装饰灯', bead: '挂片/串珠装饰灯', other: '其他装饰灯具' }[dk];
+      return lampMkt(dv2, dlabel + '（成套）');
     }
     return null;
   }
@@ -1452,6 +1650,15 @@
       if (it.lampPerimeter) lp.push('灯罩周长' + it.lampPerimeter + 'mm');
       if (it.category === 'lampFluor' && !it.fluorPanel) {
         lp.push(FLUOR_TUBE_CN[it.fluorTubes || 1] + ' ' + (FLUOR_MOUNT_NAME[it.fluorMount] || ''));
+      }
+      if (it.category === 'lampDecor') {
+        var dsn = it.name || '';
+        if (/应急|疏散|安全出口|标志灯|诱导|出口指示/.test(dsn)) {
+          lp.push('标志、诱导灯 ' + LAMP_SIGN_NAME[parseSignMount(dsn)] + '（带蓄电池）');
+        } else if (/筒灯/.test(dsn)) {
+          var dwf = parseLampWatt(dsn);
+          lp.push('筒灯' + (dwf ? ' ' + dwf + 'W' : '') + ' 嵌入式');
+        }
       }
       return lp.join(' ');
     }
@@ -1631,7 +1838,13 @@
   function buildWarn(it, quota) {
     var w = [];
     if (it.category === 'lampDecor' && !quota.code) {
-      w.push('装饰灯已套清单030413002；装饰灯具（筒灯/射灯/花灯/标志诱导灯等）安装子目差异大，请按2020基价第二册装饰灯具章节手选定额');
+      w.push('装饰灯已套清单030413002；该装饰灯具（花灯/射灯/艺术灯等）安装子目差异大，请按2020基价第二册第十三章装饰灯具章节手选定额');
+    }
+    if (it.category === 'lampDecor' && quota.code && /筒灯/.test(it.name || '')) {
+      w.push('筒灯套' + quota.code + '（可改2-1540/1541）');
+    }
+    if (it.category === 'lampDecor' && quota.code && /应急|疏散|安全出口|标志灯|诱导|出口指示/.test(it.name || '')) {
+      w.push('标志灯套' + quota.code + '（可改2-1720/1721/1723）');
     }
     if (it.category === 'ground') {
       if (it.gType === 'down') w.push('定额2-880以"根"为单位（清单030410003按延长米），请按引下线根数核对定额工程量');
@@ -1666,7 +1879,7 @@
       if (/项目名称|电缆名称|名称型号/.test(name) && /名称/.test(name) && !/\d/.test(name) && r < 5) continue;
 
       var it = buildItem(name);
-      if (!it) continue;
+      if (!it) { if (!results._dropped) results._dropped = []; results._dropped.push(name); continue; }
 
       autoIdx++;
       var seqRaw = row[0];
@@ -1696,9 +1909,8 @@
       // 配电箱（柜）价格留空由用户询价；控制电缆/电缆头暂不自动询价
       var priceInfo = null;
       if (it.category === 'power') {
-        priceInfo = lookupPrice(periodKey, it.material, it.model, it.cores, it.section);
-      } else if (it.category !== 'box' && it.category !== 'boxCabinet' &&
-                 it.category !== 'control' && it.category !== 'head') {
+        priceInfo = pricePower(periodKey, it);
+      } else if (it.category !== 'box' && it.category !== 'boxCabinet') {
         priceInfo = lookupElecPrice(periodKey, it);
       }
       if (priceInfo) {
@@ -1709,7 +1921,7 @@
         it.price = null;
         // 配电箱（柜）价格空缺：标"未计价"；控制电缆/电缆头不自动询价；其余该计价但查不到（软线/装饰灯未识别）标"待询价"
         var pricedCats = { power: 1, conduit: 1, wiring: 1, bridge: 1, outlet: 1, switchBtn: 1,
-          lampCommon: 1, lampFluor: 1, lampFactory: 1, lampMedical: 1, lampDecor: 1, ground: 1, bus: 1 };
+          lampCommon: 1, lampFluor: 1, lampFactory: 1, lampMedical: 1, lampDecor: 1, ground: 1, bus: 1, head: 1, control: 1 };
         it.priceSource = pricedCats[it.category] ? 'pending' : 'na';
         it.priceBasis = '';
       }
@@ -1726,9 +1938,8 @@
   function recomputePrice(it, periodKey) {
     var info = null;
     if (it.category === 'power') {
-      info = lookupPrice(periodKey, it.material, it.model, it.cores, it.section);
-    } else if (it.category !== 'box' && it.category !== 'boxCabinet' &&
-               it.category !== 'control' && it.category !== 'head') {
+      info = pricePower(periodKey, it);
+    } else if (it.category !== 'box' && it.category !== 'boxCabinet') {
       info = lookupElecPrice(periodKey, it);
     }
     if (info) {
@@ -1738,7 +1949,7 @@
     } else {
       it.price = null;
       var cats = { power: 1, conduit: 1, wiring: 1, bridge: 1, outlet: 1, switchBtn: 1,
-        lampCommon: 1, lampFluor: 1, lampFactory: 1, lampMedical: 1, lampDecor: 1, ground: 1, bus: 1 };
+        lampCommon: 1, lampFluor: 1, lampFactory: 1, lampMedical: 1, lampDecor: 1, ground: 1, bus: 1, head: 1, control: 1 };
       it.priceSource = cats[it.category] ? 'pending' : 'na';
       it.priceBasis = '';
     }
@@ -1759,10 +1970,13 @@
   // 渲染
   // ============================================================
   var PRICED_CATS = { power: 1, conduit: 1, wiring: 1, bridge: 1, outlet: 1, switchBtn: 1,
-    lampCommon: 1, lampFluor: 1, lampFactory: 1, lampMedical: 1, lampDecor: 1, ground: 1, bus: 1 };
+    lampCommon: 1, lampFluor: 1, lampFactory: 1, lampMedical: 1, lampDecor: 1, ground: 1, bus: 1, head: 1, control: 1 };
   function priceText(item) {
     if (!PRICED_CATS[item.category]) return '<span class="tag tag-na">未计价</span>';
-    if (item.priceSource === 'none') return '<span class="tag tag-na" title="该项定额子目不计算主材费（工作内容已含）">无主材</span>';
+    if (item.priceSource === 'none') {
+      var noneTip = item.priceBasis || '该项定额子目不计算主材费（工作内容已含）';
+      return '<span class="tag tag-na" title="' + String(noneTip).replace(/"/g, '&quot;') + '">无主材</span>';
+    }
     if (item.price === null) return '<span class="tag tag-pending">待询价</span>';
     var basisTip = item.priceBasis ? ' title="' + String(item.priceBasis).replace(/"/g, '&quot;') + '"' : '';
     if (item.priceSource === 'estimated') return '<span class="tag tag-est" ' + basisTip + '>估</span> <span ' + basisTip + '>¥' + item.price.toFixed(2) + '</span>';
@@ -1914,6 +2128,15 @@
         return FLUOR_TUBE_CN[it.fluorTubes || 1] + ' ' + (FLUOR_MOUNT_NAME[it.fluorMount] || '');
       }
       if ((it.category === 'lampCommon') && it.lampPerimeter) return '周长' + it.lampPerimeter + 'mm';
+      if (it.category === 'lampDecor') {
+        var sdn = it.name || '';
+        if (/应急|疏散|安全出口|标志灯|诱导|出口指示/.test(sdn)) return '标志诱导灯 ' + LAMP_SIGN_NAME[parseSignMount(sdn)];
+        if (/筒灯/.test(sdn)) {
+          var sw2 = parseLampWatt(sdn);
+          return '筒灯' + (sw2 ? ' ' + sw2 + 'W' : '');
+        }
+        return '装饰灯';
+      }
       return '—';
     }
     if (it.category === 'outlet') {
@@ -2167,12 +2390,16 @@
       area.style.display = 'block';
       btn.style.display = 'flex';
       document.getElementById('statusBar').className = 'status-bar status-ok';
-      document.getElementById('statusBar').textContent = '成功解析 ' + exportData.length + ' 条（配电箱柜/电缆/控制缆/电缆头/配管/配线/桥架/灯具/开关按钮/插座）；请在"敷设方式/选型"列为配电箱、配管、配线、开关按钮、插座、荧光灯、工厂灯选择对应选项；黄色行为需人工核对项';
+      var dropList = exportData._dropped || [];
+      var dropTip = dropList.length ? ('；⚠ 另有 ' + dropList.length + ' 行未识别（' + dropList.slice(0, 3).join('、') + (dropList.length > 3 ? ' 等' : '') + '），未纳入结果，请核对B列项目名称') : '';
+      document.getElementById('statusBar').textContent = '成功解析 ' + exportData.length + ' 条（配电箱柜/电缆/控制缆/电缆头/配管/配线/桥架/灯具/开关按钮/插座/防雷接地/母线）；请在"敷设方式/选型"列为配电箱、配管、配线、开关按钮、插座、荧光灯、工厂灯选择对应选项；黄色行为需人工核对项' + dropTip;
     } else {
       area.style.display = 'none';
       btn.style.display = 'none';
       document.getElementById('statusBar').className = 'status-bar status-err';
-      document.getElementById('statusBar').textContent = '未在B列识别到电缆/电缆头/配管/配线/桥架类项目名称，请检查表头是否为：A序号 / B项目名称 / C工程量';
+      var dl2 = exportData._dropped || [];
+      document.getElementById('statusBar').textContent = '未在B列识别到电缆/电缆头/配管/配线/桥架类项目名称，请检查表头是否为：A序号 / B项目名称 / C工程量' +
+        (dl2.length ? ('；未识别：' + dl2.slice(0, 3).join('、')) : '');
     }
   }
 

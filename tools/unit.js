@@ -150,17 +150,18 @@ console.log('== 电气材料信息价（天津2026年第9期，除税）==');
   // RVS 双绞软线信息价
   approx('RVS2×1.5=3.70', price('RVS-2×1.5').v, 3.70);
   ck('RVS为信息价', price('RVS-2×1.5').s, 'official');
-  // RYS 多芯软线无信息价 → null（待询价）
-  ck('RYS无信息价返回null', price('RYS-2×1.5'), null);
+  // RYS 多芯软线无信息价 → 按铜重+绝缘护套模型计市场价
+  approx('RYS2×1.5市场价4.37', price('RYS-2×1.5').v, 4.37);
+  ck('RYS为市场价', price('RYS-2×1.5').s, 'market');
   // 桥架 宽×高精确
   approx('桥架400×200=233.87', price('电缆桥架 400×200').v, 233.87);
   approx('桥架200×100=80.12', price('桥架200×100').v, 80.12);
   ck('桥架400×200信息价', price('电缆桥架 400×200').s, 'official');
   // 桥架无对应宽度 → 就近估算
   ck('桥架250×100就近估算', price('桥架250×100').s, 'estimated');
-  // 控制电缆/电缆头不查电气价
-  ck('控制电缆不查电气价', A.lookupElecPrice(P, A.buildItem('KVV-7×1.5')), null);
-  ck('电缆头不查电气价', A.lookupElecPrice(P, A.buildItem('电缆头 截面150mm')), null);
+  // 控制电缆/电缆头：信息价缺项 → 按合理市场价自动计价
+  ck('控制电缆为市场价', A.lookupElecPrice(P, A.buildItem('KVV-7×1.5')).source, 'market');
+  ck('电缆头为市场价', A.lookupElecPrice(P, A.buildItem('电缆头 截面150mm')).source, 'market');
 })();
 
 // ============================================================
@@ -372,8 +373,8 @@ console.log('== 电气材料信息价（天津2026年第9期，除税）==');
   // 配电箱（柜）价格留空
   var bx = pr('照明配电箱AL1');
   ck('配电箱价格留空', bx.price === null && bx.priceSource === 'na', true);
-  // 控制电缆/电缆头不自动询价
-  ck('控制电缆不询价', pr('KVV-7×1.5 控制电缆').price, null);
+  // 控制电缆已按市场价计价
+  ck('控制电缆市场价11.10', approx(pr('KVV-7×1.5 控制电缆').price, 11.1), true);
 })();
 
 /* ============================================================
@@ -431,7 +432,8 @@ console.log('== 电气材料信息价（天津2026年第9期，除税）==');
   ck('接地极清单030410001', gr2.listCode, '030410001');
   ck('接地极定额2-824', gr2.quotaCode, '2-824');
   ck('接地极单位根', gr2.unit, '根');
-  ck('接地极无主材', gr2.priceSource, 'none');
+  ck('接地极市场价43.36', approx(gr2.price, 43.36), true);
+  ck('接地极为市场价', gr2.priceSource, 'market');
 
   // 断接卡 / 测试点
   var gt = pr('断接卡子');
@@ -475,6 +477,74 @@ console.log('== 电气材料信息价（天津2026年第9期，除税）==');
   // 母线不误伤桥架/电缆
   ck('桥架仍归bridge', pr('钢制槽式桥架 200×100').category, 'bridge');
   ck('电缆仍归power', pr('WDZ-YJY-4×25+1×16').category, 'power');
+})();
+
+/* ============================================================
+   2026-10-29 补价与灯具定额（BTTZ矿物电缆/电缆头/控制电缆/筒灯/应急标志灯）
+   ============================================================ */
+(function () {
+  var PK = A.getPeriods()[0].period;
+  function pr(n) { return A.parseRows([[1, n, 10]], PK, 'gld')[0]; }
+  function approx(a, b) { return a !== null && a !== undefined && Math.abs(a - b) < 0.01; }
+  console.log('== 2026-10-29 补价（矿物电缆/电缆头/控制电缆/灯具定额）==');
+
+  // 矿物绝缘电缆：单芯/多芯均有市场价，且随截面单调递增
+  var m150 = pr('电力电缆 BTTZ-1*150'), m120 = pr('电力电缆 BTTZ-1*120'), m35 = pr('电力电缆 BTTZ-1*35');
+  ck('BTTZ1×150市场价218', approx(m150.price, 218), true);
+  ck('BTTZ1×120市场价180', approx(m120.price, 180), true);
+  ck('BTTZ1×35市场价62', approx(m35.price, 62), true);
+  ck('BTTZ单芯为市场价', m150.priceSource, 'market');
+  ck('BTTZ截面单调递增', m150.price > m120.price && m120.price > m35.price, true);
+  ck('BTTZ5×10市场价109.2', approx(pr('电力电缆 BTTZ-5*10').price, 109.2), true);
+  ck('BTTZ4×25市场价163.2', approx(pr('电力电缆 BTTZ-4*25').price, 163.2), true);
+  ck('BTTRZ型号识别', A.buildItem('电力电缆 BTTRZ-1*95').model, 'BTTRZ');
+  ck('BTTRZ1×95市场价148', approx(pr('电力电缆 BTTRZ-1*95').price, 148), true);
+
+  // 电缆头：1kV / 10kV / 矿物绝缘 均有主材价
+  var h1 = pr('电缆头 YJV-4*70');
+  ck('1kV电缆头4×70市场价50.6', approx(h1.price, 50.6), true);
+  ck('1kV电缆头已计价', h1.priceSource, 'market');
+  var h2 = pr('10kV电缆头 YJV-3*120');
+  ck('10kV电缆头套高压定额2-765', h2.quotaCode, '2-765');
+  ck('10kV电缆头3×120市场价200', approx(h2.price, 200), true);
+  ck('矿物绝缘电缆头专表295', approx(pr('电缆头 BTTZ 1*150').price, 295), true);
+
+  // 控制电缆：按铜重+绝缘护套模型
+  ck('KVV4×2.5市场价9.81', approx(pr('控制电缆 KVV-4*2.5').price, 9.81), true);
+  ck('KVVP14×1.0市场价17.5', approx(pr('控制电缆 KVVP-14*1.0').price, 17.5), true);
+
+  // 筒灯：统一套吸顶灯具 2-1539（无筒灯专用子目），按功率分档计价
+  ck('筒灯定额2-1539', pr('筒灯 1x9W').quotaCode, '2-1539');
+  ck('筒灯清单030413002', pr('筒灯 1x9W').listCode, '030413002');
+  ck('筒灯9W价28', approx(pr('筒灯 1x9W').price, 28), true);
+  ck('筒灯18W价52', approx(pr('筒灯 1x18W').price, 52), true);
+  ck('防潮筒灯×1.25价35', approx(pr('嵌入式LED防潮筒灯 1x9W').price, 35), true);
+  ck('筒灯单位套', pr('筒灯 1x9W').unit, '套');
+
+  // 应急照明/标志灯：统一套"标志、诱导装饰灯安装" 2-1720~1723
+  ck('应急照明灯2-1722', pr('应急照明灯 1x5W').quotaCode, '2-1722');
+  ck('疏散指示灯2-1722', pr('疏散指示灯 1x3W').quotaCode, '2-1722');
+  ck('安全出口标志灯2-1722', pr('安全出口标志灯 1x3W').quotaCode, '2-1722');
+  ck('吸顶式应急灯2-1720', pr('吸顶式应急照明灯 1x5W').quotaCode, '2-1720');
+  ck('嵌入式疏散指示灯2-1723', pr('嵌入式疏散指示灯 1x3W').quotaCode, '2-1723');
+  ck('应急照明灯主材78', approx(pr('应急照明灯 1x5W').price, 78), true);
+  ck('安全出口灯主材65', approx(pr('安全出口标志灯 1x3W').price, 65), true);
+  ck('疏散指示灯主材55', approx(pr('疏散指示灯 1x3W').price, 55), true);
+  ck('应急灯为市场价', pr('应急照明灯 1x5W').priceSource, 'market');
+
+  // 其余装饰灯不再留空
+  ck('艺术花灯有价', pr('艺术花灯 水晶').price !== null, true);
+  ck('草坪灯有价', pr('草坪灯 单头').price !== null, true);
+
+  // 同类排查：接地极/断接卡子补主材价；PC阻燃管、主筋引下不再漏识别
+  ck('接地极角钢市场价43.36', approx(pr('接地极 角钢 L50×5').price, 43.36), true);
+  ck('断接卡子市场价12', approx(pr('断接卡子').price, 12), true);
+  ck('主筋引下不计主材', pr('主筋引下').priceSource, 'none');
+  ck('PC刚性阻燃管识别', A.buildItem('PC32 刚性阻燃管 暗配').category, 'conduit');
+  ck('PC32管径32', A.buildItem('PC32 刚性阻燃管 暗配').diameter, 32);
+  ck('主筋引下识别', A.buildItem('主筋引下').gType, 'down');
+  var dropRows = A.parseRows([[1, '某某不明材料 XX-999', 5], [2, '电力电缆 YJV-4×25', 10]], PK, 'gld');
+  ck('未识别行计入_dropped', (dropRows._dropped || []).length, 1);
 })();
 
 console.log('\n结果: ' + pass + ' 通过, ' + fail + ' 失败');
