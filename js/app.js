@@ -420,15 +420,14 @@
     if (/吊链|吊式|吊装/.test(name)) return 'chain';
     return 'chain'; // 默认吊链式
   }
-  // 荧光灯组装/成套（默认成套）
-  function parseFluorKind(name) { return /组装型|组装/.test(name) ? 'assembled' : 'complete'; }
+  // 荧光灯一律成套型（用户口径：荧光灯均套用成套荧光灯，不再人工选组装/成套）
+  function parseFluorKind() { return 'complete'; }
 
-  // 工厂灯安装方式：弯杆/悬挂(直杆)/吸顶
+  // 工厂灯安装方式：弯杆/悬挂(直杆)/吸顶（默认吸顶式，名称明确注明弯杆/悬挂才改）
   function parseFactoryMount(name) {
     if (/弯管|弯杆/.test(name)) return 'bend';
-    if (/吸顶/.test(name)) return 'top';
     if (/悬挂|吊链|吊装|吊杆|直杆|高挂|挂式/.test(name)) return 'hang';
-    return 'hang'; // 默认悬挂（按用户举例含"悬挂"）
+    return 'top'; // 默认吸顶式
   }
   // 是否防水防尘灯（决定工厂灯罩灯/防水防尘编号）
   function isWaterproofFactory(name) { return /防水防尘|防水|防潮|防尘|密闭/.test(name); }
@@ -474,11 +473,12 @@
   // 是否按钮（独立）
   function isButton(name) { return /按钮/.test(name) && !/配电箱|按钮盒/.test(name); }
 
-  // 开关类型：pull拉线 / surface扳把明装 / sealed密闭 / plate扳式暗(默认)
+  // 开关类型：pull拉线 / ex防爆 / sealed密闭 / plate扳式暗(默认)
+  // 用户口径：除防爆开关外一律套扳式暗开关（按名称联数/单双控取子目），不再由人工选类型
   function parseSwType(name) {
     if (/拉线/.test(name)) return 'pull';
+    if (/防爆/.test(name)) return 'ex';
     if (/密闭|密封|防水开关|防尘开关/.test(name)) return 'sealed';
-    if (/明装|扳把|扳式明|板式明/.test(name)) return 'surface';
     return 'plate';
   }
   // 单控/双控
@@ -989,6 +989,8 @@
       if (swType === 'pull') return { code: SW_SPECIAL_CODE.pull, name: '拉线开关', inferred: false };
       if (swType === 'surface') return { code: SW_SPECIAL_CODE.surface, name: '扳把开关 明装', inferred: false };
       if (swType === 'sealed') return { code: SW_SPECIAL_CODE.sealed, name: '密闭开关 5A以内', inferred: false };
+      // 防爆开关：第二册第十三章无防爆开关专用子目，按密闭开关（5A以内）2-1813 计
+      if (swType === 'ex') return { code: SW_SPECIAL_CODE.sealed, name: '密闭开关 5A以内（防爆开关套此子目）', inferred: false };
       // 扳式暗开关：单控1799起 / 双控1805起，按联数
       var ctrl = it.swCtrl || parseSwCtrl(snm);
       var gang = it.swGang || parseSwGang(snm);
@@ -1343,6 +1345,7 @@
       if (it.swType === 'pull') return { price: e.switchPull || 9, source: 'market', basis: '拉线开关，信息价缺项按国产中高档市场价（除税）' };
       if (it.swType === 'surface') return { price: e.switchSurface || 13, source: 'market', basis: '扳把开关明装，信息价缺项按国产中高档市场价（除税）' };
       if (it.swType === 'sealed') return { price: e.switchSealed || 26, source: 'market', basis: '密闭开关（防水防尘，5A以内），信息价缺项按国产中高档市场价（除税）' };
+      if (it.swType === 'ex') return { price: e.switchEx || e.switchSealed || 45, source: 'market', basis: '防爆照明开关（Ex dⅡBT6，国产中高档），信息价缺项按市场价（除税）' };
       // 扳式暗开关（大跷板）：单~四联信息价，五/六联市场价；单控双控同价
       var g = Math.max(1, Math.min(6, it.swGang || 1));
       var sp = (e.switchPlate || {})[g] || { price: 20, basis: 'market' };
@@ -1816,9 +1819,8 @@
       it.outThree = isOutletThree(name);
       it.outAmp = parseOutletAmp(name);
       it.outHoles = parseOutletHoles(name);
-      // 名称含"暗装/暗插"默认暗装，含"明"默认明装，否则默认明装（用户可改）
-      if (/暗装|暗插|暗插座/.test(name)) it.layMode = 'concealed';
-      else it.layMode = 'surface';
+      // 插座默认暗装（名称明确注明"明装/明插座"才按明装），不再由人工选明暗
+      it.layMode = /明装|明插座|明敷/.test(name) ? 'surface' : 'concealed';
     }
     if (category === 'switchBtn') {
       it.swIsBtn = isButton(name);
@@ -1847,8 +1849,12 @@
       w.push('标志灯套' + quota.code + '（可改2-1720/1721/1723）');
     }
     if (it.category === 'ground') {
+      if (!it.gType) w.push('未识别防雷接地子类型（等电位/接地母线/接地装置/引下线/均压环·避雷网/接地极/断接卡），请核对项目名称');
       if (it.gType === 'down') w.push('定额2-880以"根"为单位（清单030410003按延长米），请按引下线根数核对定额工程量');
       if (it.gType === 'test') w.push('定额2-881以"10套"为单位，清单按延长米计列时请换算');
+    }
+    if (it.category === 'switchBtn' && it.swType === 'ex') {
+      w.push('第二册无防爆开关专用子目，防爆开关套密闭开关2-1813，请核对');
     }
     if (quota.noTier) {
       if (it.category === 'bus') w.push('未识别母线/分线箱额定电流(A)，暂按最小档计，请核对名称（如 母线 1000A）');
@@ -2024,79 +2030,53 @@
       if (it.softWire) return '<span class="lay-static">多芯软导线</span>';
       return sel('wire', it._i, opt('lighting', it.wireType, '照明线路') + opt('power', it.wireType, '动力线路'));
     }
-    // 插座：明装/暗装（防爆不分明暗，显示固定徽标）
+    // 插座：明装/暗装按名称自动判定（防爆不分明暗），不再人工选
     if (it.category === 'outlet') {
       if (it.outEx) return '<span class="lay-static">防爆</span>';
-      return sel('lay', it._i, opt('surface', it.layMode, '明装') + opt('concealed', it.layMode, '暗装'), 'lay-outlet');
+      return '<span class="lay-static">' + (it.layMode === 'surface' ? '明装' : '暗装') + '</span>';
     }
-    // 照明开关、按钮
+    // 照明开关、按钮：按名称自动判定（防爆/拉线/密闭，其余扳式暗开关），不再人工选
     if (it.category === 'switchBtn') {
       if (it.swIsBtn) {
-        var kindSel = sel('btnKind', it._i,
-          opt('general', it.btnKind, '一般按钮') + opt('control', it.btnKind, '控制按钮'), 'lay-sw');
-        var subSel;
-        if (it.btnKind === 'control') {
-          subSel = sel('btnEx', it._i, opt('normal', it.btnEx, '普通型') + opt('ex', it.btnEx, '防爆型'), 'lay-sw');
-        } else {
-          subSel = sel('btnLay', it._i, opt('surface', it.btnLay, '明装') + opt('concealed', it.btnLay, '暗装'), 'lay-sw');
-        }
-        return '<div class="lay-stack">' + kindSel + subSel + '</div>';
+        var btxt = it.btnKind === 'control'
+          ? ('控制按钮 ' + (it.btnEx === 'ex' ? '防爆型' : '普通型'))
+          : ('一般按钮 ' + (it.btnLay === 'concealed' ? '暗装' : '明装'));
+        return '<span class="lay-static">' + btxt + '</span>';
       }
-      var typeSel = sel('swType', it._i,
-        opt('plate', it.swType, '扳式暗开关') + opt('pull', it.swType, '拉线开关') +
-        opt('surface', it.swType, '扳把开关明装') + opt('sealed', it.swType, '密闭开关'), 'lay-sw');
-      var html = '<div class="lay-stack">' + typeSel;
-      if (it.swType === 'plate') {
-        var ctrlSel = sel('swCtrl', it._i, opt('single', it.swCtrl, '单控') + opt('double', it.swCtrl, '双控'), 'lay-sw');
-        var gh = '';
-        [1, 2, 3, 4, 5, 6].forEach(function (g) { gh += opt(String(g), String(it.swGang || 1), SW_TIER_CN[g]); });
-        html += sel('swGang', it._i, gh, 'lay-sw') + ctrlSel;
-      }
-      return html + '</div>';
+      var stxt;
+      if (it.swType === 'pull') stxt = '拉线开关';
+      else if (it.swType === 'ex') stxt = '防爆开关 ' + SW_TIER_CN[it.swGang || 1];
+      else if (it.swType === 'sealed') stxt = '密闭开关 5A以内';
+      else stxt = '扳式暗 ' + (it.swCtrl === 'double' ? '双控' : '单控') + ' ' + SW_TIER_CN[it.swGang || 1];
+      return '<span class="lay-static">' + stxt + '</span>';
     }
-    // 防雷接地：子类型（等电位/接地母线/接地装置/引下线/均压环·避雷网/接地极/断接卡）+ 等电位总/局部、均压环/避雷网
+    // 防雷接地：按项目名称参数自动套用（等电位/接地母线/接地装置/引下线/均压环·避雷网/接地极/断接卡）
     if (it.category === 'ground') {
-      var gopts = opt('pot', it.gType, '等电位') + opt('busbar', it.gType, '接地母线') +
-        opt('sys', it.gType, '接地装置') + opt('down', it.gType, '引下线') +
-        opt('ring', it.gType, '均压环/避雷网') + opt('rod', it.gType, '接地极') +
-        opt('test', it.gType, '断接卡/测试点');
-      var ghtml = '<div class="lay-stack">' + sel('gType', it._i, gopts, 'lay-ground');
-      if (it.gType === 'pot') {
-        ghtml += sel('potKind', it._i, opt('local', it.potKind, '局部等电位') + opt('main', it.potKind, '总等电位'), 'lay-ground');
-      }
-      if (it.gType === 'ring') {
-        ghtml += sel('gRing', it._i, opt('ring', it.gRingKind, '均压环(不计主材)') + opt('mesh', it.gRingKind, '避雷网(计圆钢)'), 'lay-ground');
-      }
-      return ghtml + '</div>';
+      var gtxt;
+      if (!it.gType) gtxt = '待识别';
+      else if (it.gType === 'pot') gtxt = (it.potKind === 'main' ? '总等电位' : '局部等电位');
+      else if (it.gType === 'ring') gtxt = (it.gRingKind === 'mesh' ? '避雷网 φ10圆钢' : '均压环 圈梁钢筋');
+      else gtxt = GROUND_TYPE_CN[it.gType] || '待识别';
+      return '<span class="lay-static">' + gtxt + '</span>';
     }
-    // 母线：额定电流分档（母线槽400/800/1250/2000/4000A；分线箱100/300/600/1000A）
+    // 母线：按名称额定电流自动取档（母线槽400/800/1250/2000/4000A；分线箱100/300/600/1000A）
     if (it.category === 'bus') {
-      var btiers = it.bType === 'box' ? BUSBOX_TIERS : BUSWAY_TIERS;
-      var curB = it.busTier;
-      if (!curB && it.busAmp !== null) curB = btiers[tierIndex(btiers.map(function (t) { return t.max; }), it.busAmp)].max;
-      var bh = curB ? '' : opt('', '', '请选择电流档');
-      btiers.forEach(function (t) { bh += opt(String(t.max), String(curB), t.label); });
-      return sel('busTier', it._i, bh, 'lay-bus');
+      if (it.busAmp === null || it.busAmp === undefined) return '<span class="lay-static">电流待识别</span>';
+      var btiers2 = it.bType === 'box' ? BUSBOX_TIERS : BUSWAY_TIERS;
+      var bi2 = tierIndex(btiers2.map(function (t) { return t.max; }), it.busAmp);
+      var bTierNum = parseInt(btiers2[bi2].label, 10);
+      var bTxt = (it.busAmp === bTierNum) ? (it.busAmp + 'A') : (it.busAmp + 'A（' + btiers2[bi2].label + '）');
+      return '<span class="lay-static">' + bTxt + '</span>';
     }
-    // 荧光灯：成套/组装 + 安装方式 + 管数（平板灯按周长，无下拉）
+    // 荧光灯：一律成套型，安装方式/管数按名称自动判定（平板灯按周长，无此项）
     if (it.category === 'lampFluor' && !it.fluorPanel) {
-      var kindSel = sel('flKind', it._i,
-        opt('complete', it.fluorKind || 'complete', '成套型') + opt('assembled', it.fluorKind || '', '组装型'), 'lay-lamp');
-      var mountOpts = { chain: '吊链式', pipe: '吊管式', top: '吸顶式', embed: '嵌入式' };
-      var mh = '';
-      Object.keys(mountOpts).forEach(function (k) { mh += opt(k, it.fluorMount || 'chain', mountOpts[k]); });
-      var mountSel = sel('flMount', it._i, mh, 'lay-lamp');
-      var th = '';
-      [1, 2, 3, 4].forEach(function (t) { th += opt(String(t), String(it.fluorTubes || 1), (FLUOR_TUBE_CN[t])); });
-      var tubeSel = sel('flTube', it._i, th, 'lay-lamp');
-      return '<div class="lay-stack">' + kindSel + mountSel + tubeSel + '</div>';
+      return '<span class="lay-static">成套型 ' + (FLUOR_MOUNT_NAME[it.fluorMount] || '吊链式') + ' ' +
+        (FLUOR_TUBE_CN[it.fluorTubes || 1] || '单管') + '</span>';
     }
-    // 工厂灯：吸顶/弯杆/悬挂 安装方式（防水防尘或工厂罩）
+    // 工厂灯：默认吸顶式，名称注明弯杆/悬挂才改
     if (it.category === 'lampFactory' && /工厂罩|防水防尘|防水|防尘|防潮|工矿|厂房|高挂/.test(it.name)) {
-      var fm = { top: '吸顶式', bend: '弯杆式', hang: '悬挂式' };
-      var fh = '';
-      Object.keys(fm).forEach(function (k) { fh += opt(k, it.factoryMount || 'hang', fm[k]); });
-      return sel('facMount', it._i, fh, 'lay-lamp');
+      var fmn = { top: '吸顶式', bend: '弯杆式', hang: '悬挂式' }[it.factoryMount || 'top'] || '吸顶式';
+      return '<span class="lay-static">' + fmn + '</span>';
     }
     if (it.category === 'power' || it.category === 'control' || it.category === 'head') {
       return '<span class="mat-badge mat-' + it.material + '">' + it.material + '芯</span>';
@@ -2150,6 +2130,7 @@
       if (it.swType === 'pull') return '拉线开关';
       if (it.swType === 'surface') return '扳把开关明装';
       if (it.swType === 'sealed') return '密闭开关 5A以内';
+      if (it.swType === 'ex') return '防爆开关 ' + SW_TIER_CN[it.swGang || 1];
       return '扳式暗开关 ' + (it.swCtrl === 'double' ? '双控' : '单控') + ' ' + SW_TIER_CN[it.swGang || 1];
     }
     if (it.category === 'ground') {
