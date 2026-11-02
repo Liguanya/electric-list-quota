@@ -2456,7 +2456,7 @@
       document.getElementById('statusBar').className = 'status-bar status-ok';
       var dropList = exportData._dropped || [];
       var dropTip = dropList.length ? ('；⚠ 另有 ' + dropList.length + ' 行未识别（' + dropList.slice(0, 3).join('、') + (dropList.length > 3 ? ' 等' : '') + '），未纳入结果，请核对B列项目名称') : '';
-      document.getElementById('statusBar').textContent = '成功解析 ' + exportData.length + ' 条（配电箱柜/电缆/控制缆/电缆头/配管/配线/桥架/灯具/开关按钮/插座/防雷接地/母线）；请在"敷设方式/选型"列为配电箱、配管、配线、开关按钮、插座、荧光灯、工厂灯选择对应选项；黄色行为需人工核对项' + dropTip;
+      document.getElementById('statusBar').textContent = '成功解析 ' + exportData.length + ' 条（配电箱柜/电缆/控制缆/电缆头/配管/配线/桥架/灯具/开关按钮/插座/防雷接地/母线）；请在"敷设方式/选型"列为配电箱（柜）、配管、配线选择对应选项（其余按名称自动套用）；黄色行为需人工核对项' + dropTip;
     } else {
       area.style.display = 'none';
       btn.style.display = 'none';
