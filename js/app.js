@@ -68,6 +68,10 @@
   var BOX_HIGH_VOLT = { code: '2-85', qname: '高压成套配电柜安装 单母线柜 电容器柜、其他柜' };
 
   // 识别配电箱/柜：返回 {isCabinet, lowVolt} 或 null
+  // 应急照明集中电源（A型/B型）：成套电源装置，按配电箱口径（清单030402011、定额2-306）计列
+  function isEmergencyPower(name) {
+    return /应急照明集中电源|集中电源|应急电源装置|应急照明电源|EPS\s*电源|消防设备电源/i.test(String(name || ''));
+  }
   function identifyBox(name) {
     if (!name) return null;
     for (var i = 0; i < BOX_GUI_KEYWORDS.length; i++) {
@@ -355,6 +359,8 @@
     if (isGroundWork(name) && parseGroundType(name)) return 'ground';
     // 母线（母线槽/母线箱/插接箱）——须在箱类之前
     if (isBusWork(name)) return 'bus';
+    // 应急照明集中电源（A型/B型）：按配电箱口径（030402011 + 2-306），须在灯具/箱类关键词之前
+    if (isEmergencyPower(name)) return 'box';
     // 配电箱（柜）：在灯具/电缆关键词之前识别（"插座箱"等箱体设备归此）
     var boxInfo = identifyBox(name);
     if (boxInfo) return boxInfo.isCabinet ? 'boxCabinet' : 'box';
@@ -400,6 +406,21 @@
     m = t.match(/[x×*]\s*(\d+(?:\.\d+)?)\s*[wW]/);
     return m ? parseFloat(m[1]) : 0;
   }
+  // 灯具规格尺寸（mm）：300×1200 / 600*600 / 100X1800 等
+  function parseLampSize(name) {
+    var m = String(name || '').match(/(\d{2,4})\s*[x×*X]\s*(\d{2,4})(?!\s*[wW])/);
+    if (!m) return null;
+    var w = parseInt(m[1], 10), h = parseInt(m[2], 10);
+    if (w < 50 || h < 50 || w > 3000 || h > 3000) return null;
+    return { w: w, h: h };
+  }
+  // 按功率折算系数：同尺寸下功率越大越贵，限幅避免失真
+  function wattCoef(watt, refWatt, lo, hi) {
+    if (!watt || !refWatt) return 1;
+    var c = Math.pow(watt / refWatt, 0.5);
+    return Math.min(hi, Math.max(lo, c));
+  }
+  function roundYuan(v) { return Math.round(v * 100) / 100; }
   // 是否为LED平板灯（荧光灯清单、但按吸顶灯具周长套定额）
   function isPanelLamp(name) { return /平板灯/.test(name) && !/长条|格栅|支架/.test(name); }
   // 荧光灯管数
@@ -1521,16 +1542,33 @@
       if (lq && lq.code && e.lampPlain && e.lampPlain[lq.code] != null) {
         return lampMkt(e.lampPlain[lq.code], lq.name.replace(/^其他普通灯具安装\s*/, '') + '（成套）');
       }
-      // 吸顶灯按周长
+      // 吸顶灯：周长档基准价 × 功率折算
       var lp = it.lampPerimeter || 0;
-      var lv = lp <= 800 ? e.lampCeilByPeri[800] : (lp <= 1100 ? e.lampCeilByPeri[1100] : e.lampCeilByPeri.inf);
-      return lampMkt(lv, 'LED吸顶灯具（灯罩周长' + (lp <= 800 ? '800mm以内' : lp <= 1100 ? '1100mm以内' : '1100mm以外') + '）');
+      var lkey = lp <= 800 ? '800' : (lp <= 1100 ? '1100' : 'inf');
+      var lv0 = e.lampCeilByPeri[lkey] != null ? e.lampCeilByPeri[lkey] : e.lampCeilByPeri.inf;
+      var lm = (e.lampModel || {}).ceil || {};
+      var lpw = parseLampWatt(it.name || '');
+      var lref = (lm.refWatt || {})[lkey] || 24;
+      var lc = wattCoef(lpw, lref, lm.lo || 0.85, lm.hi || 1.35);
+      var lv = roundYuan(lv0 * lc);
+      return lampMkt(lv, 'LED吸顶灯具（灯罩周长' + (lp <= 800 ? '800mm以内' : lp <= 1100 ? '1100mm以内' : '1100mm以外') + '）' +
+        (lpw ? ' ' + lpw + 'W：以' + lref + 'W档' + lv0 + '元为基准按功率折算×' + lc.toFixed(2) : ''));
     }
     if (it.category === 'lampFluor') {
       if (isPanelLamp(it.name || '') || it.fluorPanel) {
+        var pm = (e.lampModel || {}).panel || {};
+        var psz = parseLampSize(it.name || '');
         var pp2 = it.lampPerimeter || 0;
-        var pv2 = pp2 <= 800 ? e.lampCeilByPeri[800] : (pp2 <= 1100 ? e.lampCeilByPeri[1100] : e.lampCeilByPeri.inf);
-        return lampMkt(pv2, 'LED平板灯（灯罩周长' + (pp2 <= 800 ? '800mm以内' : pp2 <= 1100 ? '1100mm以内' : '1100mm以外') + '）');
+        var pArea = psz ? (psz.w * psz.h) / 1e6 : (pp2 ? Math.pow(pp2 / 4, 2) / 1e6 : 0.36);
+        var pWatt = parseLampWatt(it.name || '') || 36;
+        var pv2 = (pm.base || 55) + pArea * (pm.areaRate || 110) + pWatt * (pm.wattRate || 1.9);
+        var pDamp = /防潮|防水|净化|三防|密闭/.test(it.name || '');
+        if (pDamp) pv2 *= (pm.dampCoef || 1.15);
+        pv2 = Math.max(pm.min || 70, Math.round(pv2));
+        var pSizeTxt = psz ? (psz.w + '×' + psz.h) : (pp2 ? '周长' + pp2 + 'mm' : '600×600');
+        return lampMkt(pv2, 'LED平板灯 ' + pSizeTxt + ' ' + pWatt + 'W：按面积' + pArea.toFixed(2) + '㎡与功率' + pWatt +
+          'W分档计价（底价' + (pm.base || 55) + '+面积×' + (pm.areaRate || 110) + '+功率×' + (pm.wattRate || 1.9) +
+          (pDamp ? '，防潮/净化型×' + (pm.dampCoef || 1.15) : '') + '）');
       }
       var ft = Math.max(1, Math.min(4, it.fluorTubes || parseFluorTubes(it.name || '')));
       var fk = it.fluorKind === 'assembled' ? 'assembled' : 'complete';
@@ -1538,8 +1576,14 @@
       var frow = (e.lampFluor || {})[fm];
       // 组装型无吊管/嵌入 → 回退成套同方式（与定额回退一致）
       if (!frow || (fk === 'assembled' && (fm === 'pipe' || fm === 'embed'))) frow = (e.lampFluor || {}).chain;
-      var fv = frow[ft];
-      return lampMkt(fv, 'LED' + FLUOR_TUBE_CN[ft] + '荧光灯 ' + FLUOR_MOUNT_NAME[fm] + '（' + (fk === 'assembled' ? '组装型' : '成套型') + '）');
+      var fv0 = frow[ft];
+      var fmdl = (e.lampModel || {}).fluor || {};
+      var ftubeW = parseLampWatt(it.name || '');
+      var ftotalW = ftubeW * ft;
+      var fcoef = wattCoef(ftotalW, (fmdl.refWatt || 18) * ft, fmdl.lo || 0.85, fmdl.hi || 1.4);
+      var fv = roundYuan(fv0 * fcoef);
+      return lampMkt(fv, 'LED' + FLUOR_TUBE_CN[ft] + '荧光灯 ' + FLUOR_MOUNT_NAME[fm] + '（' + (fk === 'assembled' ? '组装型' : '成套型') + '）' +
+        (ftubeW ? ' 单管' + ftubeW + 'W：以单管18W档' + fv0 + '元为基准按功率折算×' + fcoef.toFixed(2) : ''));
     }
     if (it.category === 'lampFactory') {
       var ffq = matchQuota(it);
@@ -1548,9 +1592,14 @@
       }
       var ffm = it.factoryMount || parseFactoryMount(it.name || '');
       var fwp = (it.factoryType === 'waterproof' || isWaterproofFactory(it.name || ''));
-      var ffv = (fwp ? e.lampFactoryWp : e.lampFactoryHood)[ffm];
-      if (ffv == null) ffv = fwp ? 135.0 : 120.0;
-      return lampMkt(ffv, (fwp ? '防水防尘灯' : '工厂罩灯') + ' ' + (fwp ? LAMP_FACTORY_WP_NAME[ffm] : LAMP_FACTORY_HOOD_NAME[ffm]));
+      var ffv0 = (fwp ? e.lampFactoryWp : e.lampFactoryHood)[ffm];
+      if (ffv0 == null) ffv0 = fwp ? 135.0 : 120.0;
+      var fmdl2 = (e.lampModel || {}).factory || {};
+      var fWatt = parseLampWatt(it.name || '');
+      var fcoef2 = wattCoef(fWatt, fmdl2.refWatt || 50, fmdl2.lo || 0.8, fmdl2.hi || 1.6);
+      var ffv = roundYuan(ffv0 * fcoef2);
+      return lampMkt(ffv, (fwp ? '防水防尘灯' : '工厂罩灯') + ' ' + (fwp ? LAMP_FACTORY_WP_NAME[ffm] : LAMP_FACTORY_HOOD_NAME[ffm]) +
+        (fWatt ? ' ' + fWatt + 'W：以50W档' + ffv0 + '元为基准按功率折算×' + fcoef2.toFixed(2) : ''));
     }
     if (it.category === 'lampMedical') {
       var mq = matchQuota(it);
@@ -1582,7 +1631,13 @@
         if (dv == null) dv = 28.0;
         var damp = /防潮|防水|密闭/.test(dn);
         if (damp) dv = Math.round(dv * 1.25 * 100) / 100;
-        return lampMkt(dv, 'LED筒灯' + (dw ? ' ' + dw + 'W' : '') + '（' + (dtier === '30' ? '24W以上' : dtier + 'W以内') + (damp ? '，防潮型' : '') + '，成套）');
+        var dm = (e.lampModel || {}).down || {};
+        var dmatch = dn.match(/[Φφ∅]\s*(\d{2,3})|开孔\s*(\d{2,3})/);
+        var dDia = dmatch ? parseInt(dmatch[1] || dmatch[2], 10) : 0;
+        var dcoef = dDia ? Math.min(dm.hi || 1.25, Math.max(dm.lo || 0.85, Math.pow(dDia / (dm.refDia || 90), 0.6))) : 1;
+        if (dDia) dv = roundYuan(dv * dcoef);
+        return lampMkt(dv, 'LED筒灯' + (dw ? ' ' + dw + 'W' : '') + '（' + (dtier === '30' ? '24W以上' : dtier + 'W以内') + (damp ? '，防潮型' : '') + '，成套）' +
+          (dDia ? '，开孔Φ' + dDia + 'mm×' + dcoef.toFixed(2) : ''));
       }
       var dk = null;
       if (/射灯/.test(dn)) dk = 'spot';
@@ -1597,8 +1652,12 @@
       var dv2 = (e.lampDecor || {})[dk];
       if (dv2 == null) dv2 = (e.lampDecor || {}).other;
       if (dv2 == null) dv2 = 90.0;
+      var dmdl = (e.lampModel || {}).decor || {};
+      var dWatt = parseLampWatt(dn);
+      var dcoef2 = wattCoef(dWatt, dmdl.refWatt || 7, dmdl.lo || 0.8, dmdl.hi || 1.8);
+      if (dWatt) dv2 = roundYuan(dv2 * dcoef2);
       var dlabel = { spot: 'LED射灯', candle: '蜡烛灯/点光源', grille: '艺术格栅装饰灯', embedded: '嵌入式无主灯', art: '艺术花灯', lawn: '草坪灯', underwater: '水下艺术装饰灯', bead: '挂片/串珠装饰灯', other: '其他装饰灯具' }[dk];
-      return lampMkt(dv2, dlabel + '（成套）');
+      return lampMkt(dv2, dlabel + '（成套）' + (dWatt ? ' ' + dWatt + 'W：以7W档为基准按功率折算×' + dcoef2.toFixed(2) : ''));
     }
     return null;
   }
@@ -1752,6 +1811,7 @@
       btnKind: 'general', btnEx: 'normal', btnLay: 'surface',
       // 配电箱（柜）
       isCabinet: false, lowVolt: false, form: 'wall', perimeterTier: BOX_DEFAULT_TIER,
+      emergencyPower: false, emergencyType: '',
       listCode: LIST[category]
     };
 
@@ -1762,6 +1822,14 @@
       var nameFloor = name.indexOf('落地') >= 0;
       it.form = (it.isCabinet || nameFloor) ? 'floor' : 'wall';
       it.perimeterTier = (it.isCabinet || nameFloor) ? '' : BOX_DEFAULT_TIER;
+      if (isEmergencyPower(name)) {
+        it.emergencyPower = true;
+        it.emergencyType = /A\s*型/i.test(name) ? 'A' : (/B\s*型/i.test(name) ? 'B' : '');
+        it.isCabinet = false;
+        it.form = 'wall';
+        it.perimeterTier = '1.0';
+        it.listCode = LIST.box;
+      }
     }
 
     if (category === 'ground') {
@@ -1853,6 +1921,10 @@
       if (it.gType === 'down') w.push('定额2-880以"根"为单位（清单030410003按延长米），请按引下线根数核对定额工程量');
       if (it.gType === 'test') w.push('定额2-881以"10套"为单位，清单按延长米计列时请换算');
     }
+    if (it.category === 'box' && it.emergencyPower) {
+      w.push('集中电源套' + (quota.code || '2-306') + '（悬挂嵌入式），设备费' +
+        (it.emergencyType === 'B' ? 'B型12000元/台' : (it.emergencyType === 'A' ? 'A型3500元/台' : '按A型3500元/台，如为B型请在名称注明')));
+    }
     if (it.category === 'switchBtn' && it.swType === 'ex') {
       w.push('第二册无防爆开关专用子目，防爆开关套密闭开关2-1813，请核对');
     }
@@ -1913,24 +1985,8 @@
 
       // 主材价：电力电缆走电缆价格库；配管/配线/桥架/开关/插座/灯具走电气材料价（信息价优先，缺项市场价）；
       // 配电箱（柜）价格留空由用户询价；控制电缆/电缆头暂不自动询价
-      var priceInfo = null;
-      if (it.category === 'power') {
-        priceInfo = pricePower(periodKey, it);
-      } else if (it.category !== 'box' && it.category !== 'boxCabinet') {
-        priceInfo = lookupElecPrice(periodKey, it);
-      }
-      if (priceInfo) {
-        it.price = priceInfo.price;
-        it.priceSource = priceInfo.source;       // official | estimated | market
-        it.priceBasis = priceInfo.basis || '';
-      } else {
-        it.price = null;
-        // 配电箱（柜）价格空缺：标"未计价"；控制电缆/电缆头不自动询价；其余该计价但查不到（软线/装饰灯未识别）标"待询价"
-        var pricedCats = { power: 1, conduit: 1, wiring: 1, bridge: 1, outlet: 1, switchBtn: 1,
-          lampCommon: 1, lampFluor: 1, lampFactory: 1, lampMedical: 1, lampDecor: 1, ground: 1, bus: 1, head: 1, control: 1 };
-        it.priceSource = pricedCats[it.category] ? 'pending' : 'na';
-        it.priceBasis = '';
-      }
+      // 主材/设备价统一由 recomputePrice 计算（含应急照明集中电源设备费）
+      recomputePrice(it, periodKey);
 
       it.features = generateFeature(format, it);
       results.push(it);
@@ -1945,6 +2001,19 @@
     var info = null;
     if (it.category === 'power') {
       info = pricePower(periodKey, it);
+    } else if (it.category === 'box' && it.emergencyPower) {
+      var epT = elecTable(periodKey);
+      var epTab = (epT && epT.emergencyPower) || {};
+      var epKey = it.emergencyType || 'other';
+      var epV = epTab[epKey];
+      if (epV != null) {
+        info = {
+          price: epV,
+          source: 'market',
+          basis: '应急照明集中电源 ' + (it.emergencyType ? it.emergencyType + '型' : '（型号未注明，按A型计）') +
+            ' 成套设备（含控制主板、蓄电池组、通讯模块）：' + epV.toFixed(2) + '元/台，天津信息价缺项按国产中高档市场价（除税）'
+        };
+      }
     } else if (it.category !== 'box' && it.category !== 'boxCabinet') {
       info = lookupElecPrice(periodKey, it);
     }
@@ -1978,6 +2047,11 @@
   var PRICED_CATS = { power: 1, conduit: 1, wiring: 1, bridge: 1, outlet: 1, switchBtn: 1,
     lampCommon: 1, lampFluor: 1, lampFactory: 1, lampMedical: 1, lampDecor: 1, ground: 1, bus: 1, head: 1, control: 1 };
   function priceText(item) {
+    if (item.emergencyPower) {
+      if (item.price === null) return '<span class="tag tag-pending">待询价</span>';
+      var eb = item.priceBasis ? ' title="' + String(item.priceBasis).replace(/"/g, '&quot;') + '"' : '';
+      return '<span class="tag tag-market" ' + eb + '>市场价</span> <span ' + eb + '>¥' + item.price.toFixed(2) + '</span>';
+    }
     if (!PRICED_CATS[item.category]) return '<span class="tag tag-na">未计价</span>';
     if (item.priceSource === 'none') {
       var noneTip = item.priceBasis || '该项定额子目不计算主材费（工作内容已含）';
@@ -2010,6 +2084,10 @@
     // 配电柜：锁定落地
     if (it.category === 'boxCabinet') {
       return '<div class="lay-stack"><span class="lay-static">落地式（锁定）</span></div>';
+    }
+    // 应急照明集中电源：锁定壁挂（悬挂嵌入式）半周长1.0m以内 → 2-306
+    if (it.category === 'box' && it.emergencyPower) {
+      return '<div class="lay-stack"><span class="lay-static">壁挂（悬挂嵌入式）半周长1.0m以内（锁定）</span></div>';
     }
     // 配电箱：形式（落地/壁挂）+ 壁挂时半周长档
     if (it.category === 'box') {
@@ -2104,7 +2182,12 @@
     // 灯具：普通吸顶/平板灯显示灯罩周长；荧光灯显示管数；插座显示相/电流/孔
     if (/^lamp/.test(it.category)) {
       if (it.category === 'lampFluor') {
-        if (it.fluorPanel) return it.lampPerimeter ? '周长' + it.lampPerimeter + 'mm' : '平板灯';
+        if (it.fluorPanel) {
+          var psz2 = parseLampSize(it.name || '');
+          var pwt2 = parseLampWatt(it.name || '');
+          var ptxt = psz2 ? (psz2.w + '×' + psz2.h) : (it.lampPerimeter ? '周长' + it.lampPerimeter + 'mm' : '平板灯');
+          return ptxt + (pwt2 ? ' ' + pwt2 + 'W' : '');
+        }
         return FLUOR_TUBE_CN[it.fluorTubes || 1] + ' ' + (FLUOR_MOUNT_NAME[it.fluorMount] || '');
       }
       if ((it.category === 'lampCommon') && it.lampPerimeter) return '周长' + it.lampPerimeter + 'mm';
@@ -2292,7 +2375,7 @@
       // 有主材信息价的类别（电力电缆/配管/配线/桥架）带主材单价；配电箱（柜）设备费未计价但同样生成Z00741子目下设备行（单价0）
       var isBox = (it.category === 'box' || it.category === 'boxCabinet');
       // 有主材价的类别（电缆/配管/配线/桥架/开关/插座/灯具）带主材单价；配电箱（柜）设备费空缺但仍生成Z00741子目下设备行（单价0）
-      var hasPrice = it.price !== null && PRICED_CATS[it.category];
+      var hasPrice = it.price !== null && (PRICED_CATS[it.category] || it.emergencyPower);
       var hasMaterialRow = hasPrice || isBox;
       var secVal = (it.section !== null && (it.category === 'power' || it.category === 'head' || it.category === 'control')) ? it.section : '';
       var specVal = specCell(it);

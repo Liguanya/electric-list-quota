@@ -604,5 +604,74 @@ console.log('== 电气材料信息价（天津2026年第9期，除税）==');
 })();
 
 
+// ============================================================
+// 21. 应急照明集中电源 + 灯具价格结构（2026-11-02）
+// ============================================================
+(function () {
+  const PK = A.getPeriods()[0].period;
+  function row(name, qty) {
+    return A.parseRows([[1, name, qty || 1]], PK, 'guanglianda')[0];
+  }
+  console.log('== 应急照明集中电源 ==');
+  const epA = row('A型应急照明集中电源', 10);
+  const epB = row('B型应急照明集中电源', 2);
+  const epX = row('应急照明集中电源', 1);
+  ck('集中电源类别=box', epA.category, 'box');
+  ck('集中电源清单030402011', epA.listCode, '030402011');
+  ck('集中电源定额2-306', epA.quotaCode, '2-306');
+  ck('集中电源定额名称', epA.quotaName, '成套配电箱安装 悬挂嵌入式 半周长1.0m以内');
+  ck('集中电源单位台', epA.unit, '台');
+  ck('A型设备费3500', epA.price, 3500);
+  ck('B型设备费12000', epB.price, 12000);
+  ck('未注型号按A型', epX.price, 3500);
+  ck('A型价来源市场价', epA.priceSource, 'market');
+  ck('集中电源不再套标志灯', /标志/.test(epA.quotaName), false);
+  ck('集中电源合计', 3500 * 10 + 12000 * 2 + 3500, 62500);
+
+  console.log('== 平板灯：尺寸×功率 ==');
+  const p1 = row('嵌入式LED平板灯 300X1200 1x30W');
+  const p2 = row('嵌入式LED平板灯 300X1200 1x22W');
+  const p3 = row('嵌入式LED平板灯 300X1200 1x18W');
+  const p4 = row('嵌入式LED平板灯 300X600 1x22W');
+  const p5 = row('LED平板灯 600X600 36W');
+  const p6 = row('LED平板灯 600X1200 48W');
+  const p7 = row('嵌入式防潮LED平板灯 300X600 1x9W');
+  ck('平板300×1200 30W', p1.price, 152);
+  ck('平板300×1200 22W', p2.price, 136);
+  ck('平板300×1200 18W', p3.price, 129);
+  ck('平板300×600 22W', p4.price, 117);
+  ck('平板600×600 36W', p5.price, 163);
+  ck('平板600×1200 48W', p6.price, 225);
+  ck('防潮平板300×600 9W', p7.price, 106);
+  ck('同尺寸功率大更贵', p1.price > p2.price && p2.price > p3.price, true);
+  ck('同功率尺寸大更贵', p5.price > p4.price, true);
+  ck('大尺寸高功率最贵', p6.price > p5.price && p6.price > p1.price, true);
+  ck('平板灯定额2-1541', p1.quotaCode, '2-1541');
+  ck('平板灯清单030413003', p1.listCode, '030413003');
+  ck('平板灯单位套', p1.unit, '套');
+  ck('防潮系数生效', p7.price > row('LED平板灯 300X600 9W').price, true);
+
+  console.log('== 荧光灯/吸顶/工厂灯/筒灯：功率折算 ==');
+  const f1 = row('单管荧光灯 1x18W');
+  const f2 = row('单管荧光灯 1x30W');
+  ck('单管18W基准价', f1.price, 55);
+  ck('单管30W加价', f2.price, 71);
+  ck('荧光灯功率大更贵', f2.price > f1.price, true);
+  const c1 = row('吸顶灯 12W');
+  const c2 = row('吸顶灯 24W');
+  ck('吸顶灯12W', c1.price, 85);
+  ck('吸顶灯24W加价', c2.price, 114.75);
+  ck('吸顶灯功率大更贵', c2.price > c1.price, true);
+  const g1 = row('工厂灯 100W');
+  ck('工厂灯100W', g1.price, 169.71);
+  const d1 = row('筒灯 Φ90 9W');
+  const d2 = row('筒灯 Φ120 15W');
+  ck('筒灯Φ90 9W', d1.price, 28);
+  ck('筒灯Φ120 15W', d2.price, 45.16);
+  ck('筒灯大尺寸更贵', d2.price > d1.price, true);
+  const s1 = row('射灯 12W');
+  ck('射灯12W', s1.price, 45.83);
+})();
+
 console.log('\n结果: ' + pass + ' 通过, ' + fail + ' 失败');
 process.exit(fail ? 1 : 0);
