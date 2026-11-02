@@ -330,6 +330,8 @@
   function classifyLamp(name) {
     // 医疗专用灯
     if (/无影灯|手术灯|观片灯|病房|紫外线|消毒灯|杀菌灯|医用灯/.test(name)) return 'lampMedical';
+    // 灯带/灯条/光沿（含"荧光灯光沿"写法）优先按灯带处理，避免被"荧光灯"关键词先命中
+    if (isLampStrip(name)) return 'lampDecor';
     // 工厂灯及防水防尘灯 / 工厂其他灯具 / 密闭防爆
     if (/防水防尘|工厂罩|工厂灯|工矿灯|厂房|高挂灯|密闭灯|投光灯|混光灯|防爆灯|防爆荧光|高压水银|安全灯|防潮灯/.test(name)) return 'lampFactory';
     // 荧光灯（T5/T8支架、格栅荧光、LED平板/长条格栅、荧光支架/灯管）
@@ -339,7 +341,7 @@
       return 'lampFluor';
     }
     // 装饰灯
-    if (/筒灯|射灯|艺术|花灯|蜡烛灯|点光源|无主灯|标志灯|诱导灯|疏散|安全出口|应急照明|应急灯|应急疏散|消防应急|出口指示|装饰灯|挂片|串珠|吊式艺术|吸顶艺术|草坪灯|水下灯|几何形状/.test(name)) return 'lampDecor';
+    if (/灯带|灯条|光沿|灯槽灯|筒灯|射灯|艺术|花灯|蜡烛灯|点光源|无主灯|标志灯|诱导灯|疏散|安全出口|应急照明|应急灯|应急疏散|消防应急|出口指示|装饰灯|挂片|串珠|吊式艺术|吸顶艺术|草坪灯|水下灯|几何形状/.test(name)) return 'lampDecor';
     // 普通灯（含各类吸顶/吊灯/壁灯/灯头/座灯/弯脖/圆球/半圆/简易LED），以及其他含"灯"兜底
     if (/灯|光源/.test(name)) return 'lampCommon';
     return '';
@@ -405,6 +407,10 @@
     if (m) return parseFloat(m[1]);
     m = t.match(/[x×*]\s*(\d+(?:\.\d+)?)\s*[wW]/);
     return m ? parseFloat(m[1]) : 0;
+  }
+  // 灯带/灯条/光沿：按沿米计（清单030413002 装饰灯，定额2-1703 荧光灯光沿 单位10m）
+  function isLampStrip(name) {
+    return /灯带|灯条|光沿|灯槽灯/.test(String(name || ''));
   }
   // 灯具规格尺寸（mm）：300×1200 / 600*600 / 100X1800 等
   function parseLampSize(name) {
@@ -912,6 +918,10 @@
 
     if (it.category === 'lampDecor') {
       var dnm = it.name || '';
+      // 灯带/灯条/光沿 → 装饰灯具 (4)其他 2-1703 荧光灯光沿（单位10m，按沿米计）
+      if (isLampStrip(dnm)) {
+        return { code: '2-1703', name: '荧光灯光沿（装饰灯具 其他）', inferred: false, unit: '10m', factor: 10 };
+      }
       // 应急照明 / 疏散指示 / 安全出口 / 标志 / 诱导灯 → 装饰灯具 5.标志、诱导装饰灯安装（2-1720~1723）
       if (/应急|疏散|安全出口|标志灯|诱导|出口指示/.test(dnm)) {
         var sm = parseSignMount(dnm);
@@ -1610,6 +1620,15 @@
     }
     if (it.category === 'lampDecor') {
       var dn = it.name || '';
+      // 灯带/灯条/光沿：按沿米计价（主材价 80 元/m）
+      if (isLampStrip(dn)) {
+        var lsV = (e.lampStrip != null) ? e.lampStrip : 80.0;
+        var lsW = parseLampWatt(dn);
+        return {
+          price: lsV, source: 'market',
+          basis: 'LED灯带' + (lsW ? ' ' + lsW + '/m' : '') + ' 主材：' + lsV.toFixed(2) + '元/m（国产中高档，含背胶/卡扣/端头，驱动电源另计），按沿米计价，除税'
+        };
+      }
       // 应急照明 / 疏散指示 / 安全出口 / 标志 / 诱导灯：按"标志灯"成套市场价（带蓄电池）
       if (/应急|疏散|安全出口|标志灯|诱导|出口指示/.test(dn)) {
         var sk = 'other';
@@ -1910,6 +1929,9 @@
     if (it.category === 'lampDecor' && !quota.code) {
       w.push('装饰灯已套清单030413002；该装饰灯具（花灯/射灯/艺术灯等）安装子目差异大，请按2020基价第二册第十三章装饰灯具章节手选定额');
     }
+    if (it.category === 'lampDecor' && isLampStrip(it.name || '') && quota.code) {
+      w.push('灯带套' + quota.code + '（荧光灯光沿），定额单位10m，主材80元/m，导出量已÷10');
+    }
     if (it.category === 'lampDecor' && quota.code && /筒灯/.test(it.name || '')) {
       w.push('筒灯套' + quota.code + '（可改2-1540/1541）');
     }
@@ -1972,7 +1994,7 @@
       if (it.category === 'box' || it.category === 'boxCabinet') it.unit = '台';
       else if (it.category === 'bus') it.unit = (it.bType === 'box') ? '台' : 'm';
       else if (it.category === 'ground') it.unit = GROUND_UNIT[it.gType] || 'm';
-      else if (/^lamp/.test(it.category)) it.unit = '套';
+      else if (/^lamp/.test(it.category)) it.unit = isLampStrip(it.name || '') ? 'm' : '套';
       else if (it.category === 'head' || it.category === 'outlet' || it.category === 'switchBtn') it.unit = '个';
       else it.unit = 'm';
 
@@ -1980,6 +2002,8 @@
       it.quotaCode = quota.code;
       it.quotaName = quota.name;
       it.codeInferred = !!quota.inferred;
+      it.quotaUnit = quota.unit || it.unit;
+      it.quotaFactor = quota.factor || 1;
       it.warn = buildWarn(it, quota);
       if (it.qtyWarn) it.warn = (it.warn ? it.warn + '；' : '') + '工程量缺失，暂按1' + it.unit + '计请核对';
 
@@ -2037,6 +2061,8 @@
     it.quotaCode = q.code;
     it.quotaName = q.name;
     it.codeInferred = !!q.inferred;
+    it.quotaUnit = q.unit || it.unit;
+    it.quotaFactor = q.factor || 1;
     it.warn = buildWarn(it, q);
     if (it.qtyWarn) it.warn = (it.warn ? it.warn + '；' : '') + '工程量缺失，暂按1' + it.unit + '计请核对';
   }
@@ -2193,6 +2219,10 @@
       if ((it.category === 'lampCommon') && it.lampPerimeter) return '周长' + it.lampPerimeter + 'mm';
       if (it.category === 'lampDecor') {
         var sdn = it.name || '';
+        if (isLampStrip(sdn)) {
+          var stw = parseLampWatt(sdn);
+          return '灯带' + (stw ? ' ' + stw + 'W/m' : '') + '（按沿米）';
+        }
         if (/应急|疏散|安全出口|标志灯|诱导|出口指示/.test(sdn)) return '标志诱导灯 ' + LAMP_SIGN_NAME[parseSignMount(sdn)];
         if (/筒灯/.test(sdn)) {
           var sw2 = parseLampWatt(sdn);
@@ -2248,7 +2278,8 @@
         '<td>' + specCell(item) + '</td>' +
         '<td class="cell-sec">' + (item.section !== null && (item.category === 'power' || item.category === 'head' || item.category === 'control') ? item.section : '—') + '</td>' +
         '<td class="cell-qcode">' + (item.quotaCode || '—') + ' ' + inferTag(item) + '</td>' +
-        '<td class="cell-qname" title="' + escapeHtml(item.quotaName) + '">' + escapeHtml(item.quotaName || '—') + '</td>' +
+        '<td class="cell-qname" title="' + escapeHtml(item.quotaName) + '">' + escapeHtml(item.quotaName || '—') +
+          ((item.quotaFactor && item.quotaFactor !== 1) ? ' <span class="tag tag-info" title="定额单位为' + escapeHtml(item.quotaUnit) + '，导出时工程量已按 ÷' + item.quotaFactor + ' 换算">' + escapeHtml(item.quotaUnit) + '</span>' : '') + '</td>' +
         '<td class="cell-price">' + priceText(item) + '</td>' +
         '<td>' + item.quantity + '</td>' +
         '<td class="cell-warn">' + (item.warn ? '<span title="' + escapeHtml(item.warn) + '">⚠️ ' + escapeHtml(item.warn) + '</span>' : '') + '</td>';
@@ -2398,9 +2429,11 @@
         hasPrice ? num2(it.price) : (isBox ? 0 : '')
       ]);
       // 第2行：定额行
+      var qUnit = it.quotaUnit || it.unit;
+      var qQty = Math.round((it.quantity / (it.quotaFactor || 1)) * 10000) / 10000;
       wsData.push([
         it.index + '.1', '', '', '', '', '', '', '',
-        it.quotaCode, '定额行', it.quotaName, '', it.unit, it.quantity, ''
+        it.quotaCode, '定额行', it.quotaName, '', qUnit, qQty, ''
       ]);
       // 第3行：子目下设备（主材/设备）——有信息价主材类或配电箱（柜）生成；配电箱设备未计价单价0
       if (hasMaterialRow) {

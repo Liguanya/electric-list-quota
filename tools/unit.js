@@ -673,5 +673,46 @@ console.log('== 电气材料信息价（天津2026年第9期，除税）==');
   ck('射灯12W', s1.price, 45.83);
 })();
 
+
+// ============================================================
+// 22. 灯带/灯条/光沿：030413002 + 2-1703（10m）+ 80 元/m（2026-11-02）
+// ============================================================
+(function () {
+  const PK = A.getPeriods()[0].period;
+  function row(name, qty) {
+    return A.parseRows([[1, name, qty || 1]], PK, 'guanglianda')[0];
+  }
+  console.log('== 灯带 ==');
+  const b1 = row('LED灯带 3W/m', 725.3);
+  const b2 = row('LED灯条 8W/m', 120);
+  const b3 = row('灯带', 50);
+  const b4 = row('荧光灯光沿 1×36W', 30);
+  ck('灯带类别=lampDecor', b1.category, 'lampDecor');
+  ck('灯带清单030413002', b1.listCode, '030413002');
+  ck('灯带定额2-1703', b1.quotaCode, '2-1703');
+  ck('灯带定额名称含荧光灯光沿', /荧光灯光沿/.test(b1.quotaName), true);
+  ck('灯带单位m', b1.unit, 'm');
+  ck('灯带定额单位10m', b1.quotaUnit, '10m');
+  ck('灯带定额换算系数10', b1.quotaFactor, 10);
+  ck('灯带主材价80', b1.price, 80);
+  ck('灯带价来源市场价', b1.priceSource, 'market');
+  ck('灯带价不受功率影响', b2.price, 80);
+  ck('灯条清单030413002', b2.listCode, '030413002');
+  ck('灯条定额2-1703', b2.quotaCode, '2-1703');
+  ck('裸写灯带定额2-1703', b3.quotaCode, '2-1703');
+  ck('灯带数量按沿米', b1.quantity, 725.3);
+  ck('灯带合计=80×725.3', Math.round(b1.price * b1.quantity * 100) / 100, 58024);
+  ck('光沿也套2-1703', b4.quotaCode, '2-1703');
+  ck('光沿单位m', b4.unit, 'm');
+  ck('光沿价格80', b4.price, 80);
+  ck('灯带不再套吸顶灯', /吸顶/.test(b1.quotaName), false);
+  ck('灯带不再套标志灯', /标志/.test(b1.quotaName), false);
+  // 定额工程量换算：725.3m ÷ 10 = 72.53（定额单位10m）
+  ck('导出定额量÷10', Math.round((b1.quantity / b1.quotaFactor) * 10000) / 10000, 72.53);
+  // 回归：普通灯具不受影响
+  ck('吸顶灯仍按套', row('吸顶灯 12W').unit, '套');
+  ck('筒灯仍2-1539', row('筒灯 Φ90 9W').quotaCode, '2-1539');
+})();
+
 console.log('\n结果: ' + pass + ' 通过, ' + fail + ' 失败');
 process.exit(fail ? 1 : 0);
