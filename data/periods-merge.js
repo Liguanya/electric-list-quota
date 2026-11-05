@@ -7,9 +7,9 @@
   var T = (typeof window !== 'undefined' && window.TJ_PERIODS_2026) || [];
   var P = (typeof window !== 'undefined' && window.CABLE_PRICE_PERIODS) || [];
   if (!T.length || !P.length) return;
-  var tpl = P[0];
-  function norm(x) { var a = String(x || '').split('-'); return (parseInt(a[0], 10) || 0) + '-' + (parseInt(a[1], 10) || 0); }
   function cp(o) { return JSON.parse(JSON.stringify(o)); }
+  var tpl = cp(P[0]);   // 模板快照：避免首个信息价期写入后污染后续期
+  function norm(x) { var a = String(x || '').split('-'); return (parseInt(a[0], 10) || 0) + '-' + (parseInt(a[1], 10) || 0); }
   function parseSpec(spec) {
     var m = /^(\d+(?:\+\d+)?)\s*x\s*([\d.]+)(?:\+\d+x([\d.]+))?$/.exec(spec);
     if (!m) return null;
