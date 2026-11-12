@@ -714,5 +714,14 @@ console.log('== 电气材料信息价（天津2026年第9期，除税）==');
   ck('筒灯仍2-1539', row('筒灯 Φ90 9W').quotaCode, '2-1539');
 })();
 
+console.log('\n== 12位清单编码（同码递增、异码各自001）==');
+var c12 = A.parseRows([[1, '配电箱X', 1], [2, '配电箱X', 1]], A.getPeriods()[0].period, 'jj');
+A.annotateListCode12(c12);
+var cc12 = c12.map(function (x) { return x.listCode12; });
+ck('编码均为12位', cc12.every(function (c) { return /^\d{12}$/.test(c); }), true);
+ck('前缀一致', cc12[0].slice(0, 9) === cc12[1].slice(0, 9), true);
+ck('同码首条001', cc12[0].slice(9), '001');
+ck('同码次条002', cc12[1].slice(9), '002');
+
 console.log('\n结果: ' + pass + ' 通过, ' + fail + ' 失败');
 process.exit(fail ? 1 : 0);
