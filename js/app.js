@@ -2526,7 +2526,7 @@
         return;
       }
       wsData.push([it.index, it.name, it.categoryLabel, mat, it.model, specVal, secVal, it.quantity,
-        it.quotaCode, '定额行', it.quotaName, qUnit, qQty, '']);
+        it.quotaCode, '定额行', it.name, qUnit, qQty, '']);
       if (hasMaterialRow) {
         zIdx++;
         wsData.push([it.index + '.1', '', '', '', '', '', '', '',
