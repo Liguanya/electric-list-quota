@@ -24,6 +24,12 @@
 (function () {
   'use strict';
 
+  // ---------- 概算模式 ----------
+  // 概算计价不套清单编码、不生成项目特征：URL 带 ?mode=gs 时启用。
+  // 界面隐藏「清单编码」列；广联达导出删清单行与项目特征列；
+  // 建经导出删清单编码列与项目特征列。无该参数（预算模式）时行为完全不变。
+  var GS_MODE = /[?&]mode=gs(?:&|$)/.test((typeof location !== 'undefined' && location.search) || '');
+
   // ---------- 清单编码（官方核准）----------
   var LIST = {
     power: '030409001',
@@ -2272,7 +2278,7 @@
       if (item.warn) tr.className = 'row-warn';
       tr.innerHTML =
         '<td>' + item.index + '</td>' +
-        '<td>' + (item.listCode12 || item.listCode) + '</td>' +
+        '<td class="col-lc">' + (item.listCode12 || item.listCode) + '</td>' +
         '<td class="cell-name" title="' + escapeHtml(item.name) + '">' + escapeHtml(item.name) + '</td>' +
         '<td>' + layCell(item) + '</td>' +
         '<td>' + escapeHtml(item.model || '—') + '</td>' +
@@ -2379,6 +2385,7 @@
   function num2(v) { return v === null || v === undefined ? '' : Number(v.toFixed(2)); }
 
   function exportJianjing(data) {
+    if (GS_MODE) return exportJianjingGs(data);
     annotateListCode12(data);
     // A序号 B清单编码 C项目名称 D定额编码 E定额名称 F主材价格 G数量 H项目特征
     var wsData = [['序号', '清单编码', '项目名称', '定额编码', '定额名称', '主材价格', '数量', '项目特征']];
@@ -2412,6 +2419,7 @@
   }
 
   function exportGLD(data) {
+    if (GS_MODE) return exportGLDGs(data);
     annotateListCode12(data);
     // 15列：A序号 B项目名称 C类型 D材质 E型号 F规格 G截面 H工程量
     //       I项目编码 J类型 K名称 L项目特征 M单位 N工程量 O主材单价
@@ -2477,6 +2485,70 @@
     XLSX.writeFile(wb, '清单定额报价表_广联达_' + today() + '.xlsx');
   }
 
+  // 概算模式建经导出：删除「清单编码」「项目特征」两列，其余列与预算模式一致
+  function exportJianjingGs(data) {
+    annotateListCode12(data);
+    var wsData = [['序号', '项目名称', '定额编码', '定额名称', '主材价格', '数量']];
+    data.forEach(function (it) {
+      wsData.push([it.index, it.name, it.quotaCode, it.quotaName,
+        it.price === null ? '' : num2(it.price), it.quantity]);
+    });
+    var total = data.reduce(function (s, d) { return s + (d.price === null ? 0 : d.price * d.quantity); }, 0);
+    wsData.push([]);
+    wsData.push(['合计', '', '', '', num2(total), '']);
+
+    var ws = XLSX.utils.aoa_to_sheet(wsData);
+    ws['!cols'] = [{ wch: 8 }, { wch: 42 }, { wch: 10 }, { wch: 36 }, { wch: 12 }, { wch: 8 }];
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '定额报价表');
+    XLSX.writeFile(wb, '概算_定额报价表_建经_' + today() + '.xlsx');
+  }
+
+  // 概算模式广联达导出：删除清单行（清单编码整行）与「项目特征」整列，其余列顺序不变。
+  // 每条项目以定额行为首行（A 列序号、B 列项目名称），主材/设备行依次 1.1……
+  function exportGLDGs(data) {
+    var wsData = [['序号', '项目名称', '类型', '材质', '型号', '规格', '截面mm2', '工程量',
+      '项目编码', '类型', '名称', '单位', '工程量', '主材单价']];
+    var zIdx = 0;
+    data.forEach(function (it) {
+      var isBox = (it.category === 'box' || it.category === 'boxCabinet');
+      var hasPrice = it.price !== null && (PRICED_CATS[it.category] || it.emergencyPower);
+      var hasMaterialRow = hasPrice || isBox;
+      var secVal = (it.section !== null && (it.category === 'power' || it.category === 'head' || it.category === 'control')) ? it.section : '';
+      var specVal = specCell(it);
+      var mat = (it.category === 'power' || it.category === 'control' || it.category === 'head') ? (it.material === '铝' ? '铝' : '铜') : '';
+      var qUnit = it.quotaUnit || it.unit;
+      var qQty = Math.round((it.quantity / (it.quotaFactor || 1)) * 10000) / 10000;
+
+      if (!it.quotaCode) {
+        wsData.push([it.index, it.name, it.categoryLabel, mat, it.model, specVal, secVal, it.quantity,
+          '', '待人工处理', it.name, it.unit, it.quantity, hasPrice ? num2(it.price) : '']);
+        return;
+      }
+      wsData.push([it.index, it.name, it.categoryLabel, mat, it.model, specVal, secVal, it.quantity,
+        it.quotaCode, '定额行', it.quotaName, qUnit, qQty, '']);
+      if (hasMaterialRow) {
+        zIdx++;
+        wsData.push([it.index + '.1', '', '', '', '', '', '', '',
+          'Z00741-' + String(zIdx).padStart(3, '0'), '子目下设备', it.name, it.unit, it.quantity,
+          hasPrice ? num2(it.price) : 0]);
+      }
+    });
+
+    var total = data.reduce(function (s, d) { return s + (d.price === null ? 0 : d.price * d.quantity); }, 0);
+    wsData.push([]);
+    wsData.push(['合计', '', '', '', '', '', '', '', '', '', '', '', '', num2(total)]);
+
+    var ws = XLSX.utils.aoa_to_sheet(wsData);
+    ws['!cols'] = [
+      { wch: 8 }, { wch: 40 }, { wch: 10 }, { wch: 8 }, { wch: 12 }, { wch: 16 }, { wch: 9 }, { wch: 9 },
+      { wch: 13 }, { wch: 10 }, { wch: 40 }, { wch: 6 }, { wch: 9 }, { wch: 12 }
+    ];
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '定额报价表');
+    XLSX.writeFile(wb, '概算_定额报价表_广联达_' + today() + '.xlsx');
+  }
+
   function today() {
     var d = new Date();
     return d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
@@ -2518,6 +2590,18 @@
   }
 
   if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded', function () {
+    if (GS_MODE) {
+      document.body.classList.add('gs-mode');
+      var h1 = document.querySelector('.header h1');
+      if (h1) h1.textContent = h1.textContent.replace('智能组价系统', '概算组价系统').replace('智能组价平台', '概算组价平台');
+      var hd = document.querySelector('.header p');
+      if (hd) hd.textContent = '概算计价：不套清单编码、不生成项目特征，按项目名称直接套用定额与主材 · 主材价优先信息价、其次市场价 · 全部本地计算';
+      var tip = document.createElement('div');
+      tip.className = 'gs-tip';
+      tip.innerHTML = '📌 <b>概算模式</b>　不套用清单编码与项目特征：广联达导出已删除清单行与项目特征列，建经导出已删除清单编码列与项目特征列；主材价优先取天津市信息价，缺项按市场价。';
+      var content = document.querySelector('.content');
+      if (content) content.insertBefore(tip, content.firstChild);
+    }
     var sel = document.getElementById('periodSelect');
     getPeriods().forEach(function (p) {
       var opt = document.createElement('option');
@@ -2607,7 +2691,9 @@
       getPeriods: getPeriods, LIST_CODE: LIST_CODE, LIST: LIST, classify: classify,
       buildItem: buildItem, parseDiameter: parseDiameter, parseBridgeWidth: parseBridgeWidth,
       isSoftWire: isSoftWire, recomputeQuota: recomputeQuota,
-      lookupElecPrice: lookupElecPrice, parseBridgeWH: parseBridgeWH, annotateListCode12: annotateListCode12
+      lookupElecPrice: lookupElecPrice, parseBridgeWH: parseBridgeWH, annotateListCode12: annotateListCode12,
+      exportGLD: exportGLD, exportJianjing: exportJianjing,
+      exportGLDGs: exportGLDGs, exportJianjingGs: exportJianjingGs
     };
   }
 })();
