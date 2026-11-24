@@ -60,6 +60,7 @@
         .tag-info { background: #e0f2f1; color: #00695c; cursor: help; }
         .tag-market { background: #e8eaf6; color: #283593; cursor: help; }
         .tag-db { background: #e0f2f1; color: #00695c; cursor: help; }
+        .tag-fixed { background: #fff3e0; color: #e65100; cursor: help; }
         .price-brand { display: inline-block; margin-left: 3px; padding: 0 5px; border-radius: 8px; background: #e0f2f1; color: #00695c; font-size: 11px; border: 1px solid #b2dfdb; white-space: nowrap; }
         .tag-na { background: #eceff1; color: #607d8b; }
         .tag-infer { background: #e3f2fd; color: #1565c0; cursor: help; }
@@ -103,7 +104,7 @@
             <div class="upload-area" id="uploadArea">
                 <div class="upload-icon">📁</div>
                 <div class="upload-text">点击上传或拖拽工程量清单到此处</div>
-                <div class="upload-hint">支持 .xlsx、.xls 格式（配电箱柜 / 电缆 / 电缆头 / 配管 / 配线 / 桥架 / 灯具 / 开关插座 / 防雷接地 / 母线）</div>
+                <div class="upload-hint">支持 .xlsx、.xls 格式（配电箱柜 / 电缆 / 电缆头 / 配管 / 配线 / 桥架 / 灯具 / 开关插座 / 防雷接地 / 母线 / 接线箱（T接箱） / 接线盒 / 金属软管 / 出线口 / UPS及电池 / 智慧配电 / 送配电装置系统 / 自动投入装置 / 检查接线）</div>
                 <input type="file" id="excelFile" accept=".xlsx,.xls">
             </div>
 
@@ -156,6 +157,6 @@
     <script src="data/prices.js"></script>
     <script src="data/periods-merge.js"></script>
     <script src="https://liguanya.github.io/jidian-list-system/price-db/js/db.js?v=20261113c"></script>
-    <script src="js/app.js?v=20261113c"></script>
+    <script src="js/app.js?v=20261124a"></script>
 </body>
 </html>

@@ -818,5 +818,71 @@ var _db2 = elPr('开关，双控，六联');
 ck('库价更新后重取', Math.round(_db2.price * 100) / 100, 108.88);
 ck('更新后仍为数据库价', _db2.priceSource, 'db');
 
+console.log('\n== 补充清单/定额规则（2026-11-24 用户指定口径）==');
+var _t1 = elPr('T接箱');
+ck('T接箱分类', _t1.category, 'junctionBox');
+ck('T接箱清单', _t1.listCode, '030412005');
+ck('T接箱定额', _t1.quotaCode, '2-1526');
+ck('T接箱主材价195', _t1.price, 195);
+ck('T接箱固定价源', _t1.priceSource, 'fixed');
+
+var _t2 = elPr('送配电装置系统调试 1kV以内交流供电');
+ck('送配电装置系统分类', _t2.category, 'sysTest');
+ck('送配电装置系统清单', _t2.listCode, '030416006');
+ck('送配电装置系统定额1kV', _t2.quotaCode, '2-987');
+ck('送配电装置系统无主材', _t2.priceSource, 'none');
+ck('送配电装置系统直流定额', elPr('送配电装置系统调试 直流供电1650V以内').quotaCode, '2-992');
+
+var _t3 = elPr('自动投入装置调试 备用电源自投装置');
+ck('自动投入装置清单', _t3.listCode, '030416009');
+ck('自动投入装置定额', _t3.quotaCode, '2-1001');
+
+var _t4 = elPr('风机盘管检查接线');
+ck('检查接线清单', _t4.listCode, '030416029');
+ck('风机盘管检查接线定额', _t4.quotaCode, '2-1886');
+ck('风机箱检查接线定额', elPr('风机箱检查接线').quotaCode, '2-1887');
+
+var _t5 = elPr('UPS及电池 30kV·A');
+ck('UPS清单', _t5.listCode, '030402011');
+ck('UPS 30kVA定额', _t5.quotaCode, '2-476');
+ck('UPS 30kVA主材价', _t5.price, 79620);
+var _t5b = elPr('UPS及电池 100KV·A');
+ck('UPS 100kVA定额', _t5b.quotaCode, '2-477');
+ck('UPS 100kVA主材价', _t5b.price, 265400);
+ck('UPS 500kVA定额', elPr('UPS及电池 500KV·A').quotaCode, '2-478');
+ck('UPS 800kVA定额', elPr('UPS及电池 800KV·A').quotaCode, '2-479');
+ck('UPS主材按每kVA2654', _t5b.price, 100 * 2654);
+
+var _t6 = elPr('智慧配电系统');
+ck('智慧配电系统清单补项', _t6.listCode, '补项');
+ck('智慧配电系统定额补项', _t6.quotaCode, '补项');
+ck('智慧配电系统主材价120000', _t6.price, 120000);
+
+var _t7 = elPr('金属软管 DN20');
+ck('金属软管清单', _t7.listCode, '030412001');
+ck('金属软管定额', _t7.quotaCode, '2-1290');
+ck('金属软管主材价', _t7.price, 6.5);
+ck('金属软管单位m', _t7.unit, 'm');
+
+var _t8 = elPr('出线口');
+ck('出线口清单', _t8.listCode, '030413014');
+ck('出线口定额', _t8.quotaCode, '2-1835');
+ck('出线口取信息价', _t8.priceSource, 'official');
+ck('出线口单位个', _t8.unit, '个');
+
+var _t9 = elPr('接线盒');
+ck('接线盒清单', _t9.listCode, '030412006');
+ck('接线盒定额', _t9.quotaCode, '2-1534');
+ck('接线盒单位个', _t9.unit, '个');
+
+// 导出：补项编码原样输出、固定价进子目下设备行
+var capX = null;
+global.XLSX = { utils: { aoa_to_sheet: function (r) { return { __rows: r }; }, book_new: function () { return {}; }, book_append_sheet: function (wb, ws) { wb.__rows = ws.__rows; } }, writeFile: function (wb) { capX = wb.__rows; } };
+A.exportGLD([_t6, _t1]);
+ck('补项清单编码原样输出', capX[1][8], '补项');
+ck('标准清单编码补12位', capX[4][8], '030412005001');
+ck('T接箱子目下设备单价195', capX[6][14], 195);
+ck('智慧配电子目下设备单价120000', capX[3][14], 120000);
+
 console.log('\n结果: ' + pass + ' 通过, ' + fail + ' 失败');
 process.exit(fail ? 1 : 0);

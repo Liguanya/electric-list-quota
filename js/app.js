@@ -48,7 +48,17 @@
     switchBtn: '030413013',   // 照明开关、按钮
     // 配电箱（柜）
     boxCabinet: '030402010',  // 配电柜（开关柜/低压柜/高压柜等）
-    box: '030402011'          // 配电箱（照明箱/动力箱/控制箱等）
+    box: '030402011',         // 配电箱（明装箱/暗装箱/控制箱等）
+    // ===== 补充规则（2026-11-24 用户指定口径）=====
+    junctionBox: '030412005', // 接线箱（T接箱）
+    box2: '030412006',        // 接线盒
+    flexConduit: '030412001', // 配管（金属软管）
+    outPoint: '030413014',    // 插座（出线口）
+    sysTest: '030416006',     // 输配电装置系统（送配电装置系统调试）
+    autoDev: '030416009',     // 自动投入装置
+    checkWire: '030416029',   // 其他项目调试（风机盘管/风机箱/电动机检查接线）
+    ups: '030402011',         // 成套配电箱（UPS及电池）
+    smart: '补项'              // 智慧配电系统
   };
 
   // ---------- 配电箱（柜）：形式 + 半周长分档 ----------
@@ -358,7 +368,24 @@
     return /插座/.test(name) && !/插座箱/.test(name);
   }
 
+  /* ===== 补充规则（2026-11-24）：用户指定清单/定额口径，命中即锁定 ===== */
+  function classifySpecial(name) {
+    var n = String(name || '');
+    if (/T\s*接箱/i.test(n)) return 'junctionBox';                 // 030412005 + 2-1526
+    if (/智慧配电/.test(n)) return 'smart';                        // 补项 + 补项
+    if (/送配电装置系统/.test(n)) return 'sysTest';                 // 030416006 + 2-987~992
+    if (/自动投入装置/.test(n)) return 'autoDev';                  // 030416009 + 2-1001
+    if (/检查接线/.test(n)) return 'checkWire';                    // 030416029 + 2-1886/1887
+    if (/UPS/i.test(n) && !/配电柜|配电箱/.test(n)) return 'ups';   // 030402011 + 2-476~479
+    if (/金属软管/.test(n)) return 'flexConduit';                  // 030412001 + 2-1290
+    if (/出线口/.test(n)) return 'outPoint';                       // 030413014 + 2-1835
+    if (/接线盒/.test(n)) return 'box2';                           // 030412006 + 2-1534
+    return '';
+  }
+
   function classify(name) {
+    var sp = classifySpecial(name);
+    if (sp) return sp;
     // 插座优先（独立器具）
     if (isOutlet(name)) return 'outlet';
     // 照明开关、按钮（独立器具；在配电箱之前，"开关箱/开关柜"已在 isLightSwitch 排除）
@@ -491,6 +518,12 @@
     if (CN_NUM[s]) return CN_NUM[s];
     return null;
   }
+  // UPS 容量（kV·A / KVA）
+  function parseUpsKva(name) {
+    var m = String(name || '').match(/(\d+(?:\.\d+)?)\s*(?:kV\s*[·.．]?\s*A|KVA)/i);
+    return m ? parseFloat(m[1]) : null;
+  }
+
   function isWireKw(name) { return /配线|穿线|BV|BYJ|RYS|KYJY|KYY|导线/.test(name); }
 
   /* ---------------- 开关 / 按钮 解析 ---------------- */
@@ -730,6 +763,48 @@
   // ============================================================
   function matchQuota(it) {
     var i, idx, q, tiers, label, sec;
+
+    /* ===== 补充规则（2026-11-24）：用户指定清单/定额口径 ===== */
+    if (it.category === 'junctionBox') {
+      return { code: '2-1526', name: '明装接线箱安装 半周长700mm以内', inferred: false };
+    }
+    if (it.category === 'box2') {
+      return { code: '2-1534', name: '暗装 接线盒', inferred: false };
+    }
+    if (it.category === 'flexConduit') {
+      return { code: '2-1290', name: '金属软管敷设 公称直径20mm以内 每根管长500mm以内', inferred: false };
+    }
+    if (it.category === 'outPoint') {
+      return { code: '2-1835', name: '单相暗插座15A 5孔（出线口）', inferred: false };
+    }
+    if (it.category === 'autoDev') {
+      return { code: '2-1001', name: '自动投入装置调试 备用电源自投装置', inferred: false };
+    }
+    if (it.category === 'smart') {
+      return { code: '补项', name: '智慧配电系统（补充定额项目）', inferred: false };
+    }
+    if (it.category === 'checkWire') {
+      var cwn = String(it.name || '');
+      if (/风机箱/.test(cwn)) return { code: '2-1887', name: '风机箱检查接线', inferred: false };
+      if (/风机盘管/.test(cwn)) return { code: '2-1886', name: '风机盘管检查接线', inferred: false };
+      return { code: '2-1886', name: '风机盘管检查接线（电动机检查接线请按容量核对2-1886~2-1889）', inferred: true };
+    }
+    if (it.category === 'sysTest') {
+      var stn = String(it.name || '');
+      if (/直流/.test(stn)) return { code: '2-992', name: '送配电装置系统调试 直流供电1650V以内', inferred: false };
+      if (/10\s*kV|高压/i.test(stn)) return { code: '2-988', name: '送配电装置系统调试 10kV以内交流供电', inferred: true };
+      return { code: '2-987', name: '送配电装置系统调试 1kV以内交流供电', inferred: false };
+    }
+    if (it.category === 'ups') {
+      var ukv = it.upsKva;
+      if (ukv === null || ukv === undefined) {
+        return { code: '2-476', name: 'UPS安装 单相不间断电源30kV·A以内', inferred: true, noTier: true };
+      }
+      if (ukv <= 30) return { code: '2-476', name: 'UPS安装 单相不间断电源30kV·A以内', inferred: false };
+      if (ukv <= 100) return { code: '2-477', name: 'UPS安装 单相不间断电源100kV·A以内', inferred: true };
+      if (ukv <= 500) return { code: '2-478', name: 'UPS安装 三相不间断电源500kV·A以内', inferred: true };
+      return { code: '2-479', name: 'UPS安装 三相不间断电源500kV·A以上', inferred: false };
+    }
 
     // 配电柜（开关柜/低压柜/高压柜等）：锁定落地，含"低压"→2-282，其余→2-85
     if (it.category === 'boxCabinet') {
@@ -1697,7 +1772,10 @@
     lampFactory: '工厂灯', lampMedical: '医疗专用灯', outlet: '插座',
     switchBtn: '照明开关、按钮',
     ground: '防雷接地', bus: '母线',
-    box: '配电箱', boxCabinet: '配电柜'
+    box: '配电箱', boxCabinet: '配电柜',
+    junctionBox: '接线箱', box2: '接线盒', flexConduit: '配管（金属软管）', outPoint: '插座（出线口）',
+    sysTest: '输配电装置系统', autoDev: '自动投入装置', checkWire: '其他项目调试',
+    ups: '成套配电箱（UPS）', smart: '智慧配电系统'
   };
   var CAT_WORK = {
     power: '电缆敷设、电缆头制作安装及辅助工作',
@@ -1716,7 +1794,16 @@
     ground: '平直、下料、测位、打眼、埋卡子、焊接、固定、刷漆、接地电阻测试及辅助工作',
     bus: '开箱、检查、测位、划线、打眼、固定、连接、接地、刷漆及辅助工作',
     box: '成套配电箱购置、运输、安装、接地、接线、调试及辅助工作',
-    boxCabinet: '成套配电柜（屏）购置、运输、安装、接地、接线、调试及辅助工作'
+    boxCabinet: '成套配电柜（屏）购置、运输、安装、接地、接线、调试及辅助工作',
+    junctionBox: '接线箱（T接箱）购置、安装、接线、固定及辅助工作',
+    box2: '测位、打眼、固定接线盒、接线及辅助工作',
+    flexConduit: '金属软管敷设、固定、接地连接及辅助工作',
+    outPoint: '测位画线、打眼、清扫盒子、装插座、接线、装盖及辅助工作',
+    sysTest: '送配电装置系统调试、记录及辅助工作',
+    autoDev: '备用电源自投装置调试、整定及辅助工作',
+    checkWire: '风机盘管、风机箱、电动机检查接线及调试',
+    ups: 'UPS及电池购置、安装、接线、调试及辅助工作',
+    smart: '智慧配电系统成套设备安装、接线、系统调试及辅助工作'
   };
   // 配电箱安装方式描述
   function boxInstallSpec(it) {
@@ -1764,6 +1851,18 @@
       if (it.swType === 'sealed') return '密闭开关 5A以内';
       return '扳式暗开关 ' + (it.swCtrl === 'double' ? '双控' : '单控') + ' ' + SW_TIER_CN[it.swGang || 1];
     }
+    if (it.category === 'junctionBox') return '接线箱（T接箱） 明装 半周长700mm以内';
+    if (it.category === 'box2') return '接线盒 暗装 86型';
+    if (it.category === 'flexConduit') return '金属软管 DN20 每根500mm以内';
+    if (it.category === 'outPoint') return '出线口（单相暗插座 15A 5孔）';
+    if (it.category === 'sysTest') {
+      var sts = String(it.name || '');
+      return /直流/.test(sts) ? '直流供电 1650V以内' : (/10\s*kV|高压/i.test(sts) ? '10kV以内交流供电' : '1kV以内交流供电');
+    }
+    if (it.category === 'autoDev') return '备用电源自投装置';
+    if (it.category === 'checkWire') return String(it.name || '风机盘管检查接线');
+    if (it.category === 'ups') return 'UPS ' + (it.upsKva ? it.upsKva + 'kV·A' : '容量未注') + '（含电池）';
+    if (it.category === 'smart') return '智慧配电系统 成套';
     // 防雷接地
     if (it.category === 'ground') {
       var gspec = {
@@ -1857,6 +1956,10 @@
       }
     }
 
+    if (category === 'ups') {
+      it.upsKva = parseUpsKva(name);
+    }
+
     if (category === 'ground') {
       it.gType = parseGroundType(name);
       it.gRingKind = it.gType === 'ring' ? parseGroundRing(name) : '';
@@ -1932,6 +2035,16 @@
 
   function buildWarn(it, quota) {
     var w = [];
+    if (it.category === 'sysTest') {
+      w.push('送配电装置系统调试按电压等级分档（2-987~2-992），已套' + (quota.code || '2-987') + '，请按实际电压等级/交直流核对');
+    }
+    if (it.category === 'ups') {
+      if (!it.upsKva) w.push('未识别UPS容量(kV·A)，暂按30kV·A以内档，请核对名称（如 UPS及电池 100kV·A）');
+      else if (quota.inferred) w.push('UPS定额按容量档就近推算（2-476~2-479），请对照基价表核对单相/三相档位');
+    }
+    if (it.category === 'checkWire' && !/风机盘管|风机箱/.test(String(it.name || ''))) {
+      w.push('电动机检查接线请按电机容量核对2-1886~2-1889对应子目');
+    }
     if (it.category === 'lampDecor' && !quota.code) {
       w.push('装饰灯已套清单030413002；该装饰灯具（花灯/射灯/艺术灯等）安装子目差异大，请按2020基价第二册第十三章装饰灯具章节手选定额');
     }
@@ -2002,6 +2115,11 @@
       else if (it.category === 'ground') it.unit = GROUND_UNIT[it.gType] || 'm';
       else if (/^lamp/.test(it.category)) it.unit = isLampStrip(it.name || '') ? 'm' : '套';
       else if (it.category === 'head' || it.category === 'outlet' || it.category === 'switchBtn') it.unit = '个';
+      else if (it.category === 'junctionBox' || it.category === 'box2' || it.category === 'outPoint' || it.category === 'autoDev') it.unit = '个';
+      else if (it.category === 'flexConduit') it.unit = 'm';
+      else if (it.category === 'sysTest') it.unit = '系统';
+      else if (it.category === 'checkWire' || it.category === 'ups') it.unit = '台';
+      else if (it.category === 'smart') it.unit = '项';
       else it.unit = 'm';
 
       var quota = matchQuota(it);
@@ -2028,9 +2146,36 @@
   }
 
   // 行内选择变更后重算该条主材价（开关/插座/灯具/电缆等与选型相关）
+  // 出线口/金属软管/接线盒主材：信息价优先，缺项按国产中高档市场价（可被价格数据库覆盖）
+  function lookupPointPrice(periodKey, it) {
+    var e = elecTable(periodKey);
+    var info = periodLabel(periodKey);
+    if (it.category === 'outPoint') {
+      var op = ((e && e.outlet15Conceal) || {})[5];
+      if (op) return { price: op, source: 'official', basis: '天津' + info + '信息价 单相暗插座15A 5孔（出线口主材，除税）' };
+      return { price: 7.1, source: 'market', basis: '出线口主材（单相暗插座15A 5孔），' + info + '信息价缺项按国产中高档市场价（除税）' };
+    }
+    if (it.category === 'flexConduit') {
+      return { price: 6.5, source: 'market', basis: '金属软管 DN20 包塑（每根500mm以内），' + info + '信息价缺项按国产中高档市场价（除税）' };
+    }
+    return { price: 2.5, source: 'market', basis: '暗装接线盒 86型，' + info + '信息价缺项按国产中高档市场价（除税）' };
+  }
+
   function recomputePriceCore(it, periodKey) {
     var info = null;
-    if (it.category === 'power') {
+    if (it.category === 'junctionBox') {
+      info = { price: 195.00, source: 'fixed', basis: '用户指定主材价：明装接线箱（T接箱）195.00元/个' };
+    } else if (it.category === 'smart') {
+      info = { price: 120000.00, source: 'fixed', basis: '用户指定主材价：智慧配电系统 120000.00元/项（系统成套）' };
+    } else if (it.category === 'ups') {
+      var uk2 = it.upsKva;
+      if (uk2 !== null && uk2 !== undefined && uk2 > 0) {
+        info = { price: Math.round(uk2 * 2654 * 100) / 100, source: 'fixed',
+          basis: 'UPS及电池 按容量 ' + uk2 + 'kV·A × 2654.00元/kV·A（用户指定）' };
+      }
+    } else if (it.category === 'flexConduit' || it.category === 'box2' || it.category === 'outPoint') {
+      info = lookupPointPrice(periodKey, it);
+    } else if (it.category === 'power') {
       info = pricePower(periodKey, it);
     } else if (it.category === 'box' && it.emergencyPower) {
       var epT = elecTable(periodKey);
@@ -2054,6 +2199,11 @@
       it.priceBasis = info.basis || '';
     } else {
       it.price = null;
+      if (it.category === 'sysTest' || it.category === 'autoDev' || it.category === 'checkWire') {
+        it.priceSource = 'none';
+        it.priceBasis = '调试子目不含主材费（工作内容已含）';
+        return;
+      }
       var cats = { power: 1, conduit: 1, wiring: 1, bridge: 1, outlet: 1, switchBtn: 1,
         lampCommon: 1, lampFluor: 1, lampFactory: 1, lampMedical: 1, lampDecor: 1, ground: 1, bus: 1, head: 1, control: 1 };
       it.priceSource = cats[it.category] ? 'pending' : 'na';
@@ -2168,7 +2318,8 @@
   // 渲染
   // ============================================================
   var PRICED_CATS = { power: 1, conduit: 1, wiring: 1, bridge: 1, outlet: 1, switchBtn: 1,
-    lampCommon: 1, lampFluor: 1, lampFactory: 1, lampMedical: 1, lampDecor: 1, ground: 1, bus: 1, head: 1, control: 1 };
+    lampCommon: 1, lampFluor: 1, lampFactory: 1, lampMedical: 1, lampDecor: 1, ground: 1, bus: 1, head: 1, control: 1,
+    junctionBox: 1, box2: 1, flexConduit: 1, outPoint: 1, sysTest: 1, autoDev: 1, checkWire: 1, ups: 1, smart: 1 };
   function priceText(item) {
     if (item.emergencyPower) {
       if (item.price === null) return '<span class="tag tag-pending">待询价</span>';
@@ -2183,6 +2334,7 @@
     if (item.price === null) return '<span class="tag tag-pending">待询价</span>';
     var basisTip = item.priceBasis ? ' title="' + String(item.priceBasis).replace(/"/g, '&quot;') + '"' : '';
     if (item.priceSource === 'estimated') return '<span class="tag tag-est" ' + basisTip + '>估</span> <span ' + basisTip + '>¥' + item.price.toFixed(2) + '</span>';
+    if (item.priceSource === 'fixed') return '<span class="tag tag-fixed" ' + basisTip + '>固定价</span> <span ' + basisTip + '>¥' + item.price.toFixed(2) + '</span>';
     if (item.priceSource === 'db') return '<span class="tag tag-db" ' + basisTip + '>数据库价</span> <span ' + basisTip + '>¥' + item.price.toFixed(2) + '</span>' + (item.priceBrand ? ' <span class="price-brand" title="价格数据库报价品牌">' + escapeHtml(item.priceBrand) + '</span>' : '');
     if (item.priceSource === 'market') return '<span class="tag tag-market" ' + basisTip + '>市场价</span> <span ' + basisTip + '>¥' + item.price.toFixed(2) + '</span>';
     return '<span class="tag tag-info" ' + basisTip + '>信息价</span> <span ' + basisTip + '>¥' + item.price.toFixed(2) + '</span>';
@@ -2288,6 +2440,21 @@
 
   // 规格列按类别展示关键参数
   function specCell(it) {
+    if (it.category === 'junctionBox') return '半周长700mm以内 明装';
+    if (it.category === 'box2') return '86型 暗装';
+    if (it.category === 'flexConduit') return 'DN20 每根500mm';
+    if (it.category === 'outPoint') return '单相15A 5孔 暗装';
+    if (it.category === 'sysTest') {
+      var ssn = String(it.name || '');
+      return /直流/.test(ssn) ? '直流1650V以内' : (/10\s*kV|高压/i.test(ssn) ? '10kV以内' : '1kV以内');
+    }
+    if (it.category === 'autoDev') return '备用电源自投';
+    if (it.category === 'checkWire') {
+      var ccn = String(it.name || '');
+      return /风机箱/.test(ccn) ? '风机箱' : (/风机盘管/.test(ccn) ? '风机盘管' : '电动机');
+    }
+    if (it.category === 'ups') return (it.upsKva ? it.upsKva + 'kV·A' : '容量未注') + ' 含电池';
+    if (it.category === 'smart') return '成套系统';
     if (it.category === 'conduit') return it.diameter !== null ? 'DN' + it.diameter : '—';
     if (it.category === 'bridge') return it.bridgeWidth !== null ? '宽' + it.bridgeWidth : escapeHtml(it.spec || '—');
     if (it.category === 'wiring') {
@@ -2504,6 +2671,7 @@
     data.forEach(function (it) {
       var c = String(it.listCode || '').trim();
       if (!c) { it.listCode12 = c; return; }
+      if (!/^\d/.test(c)) { it.listCode12 = c; return; }   // 非数字编码（如「补项」）原样输出，不补位
       seq[c] = (seq[c] || 0) + 1;
       var base = c.length < 9 ? c + new Array(10 - c.length).join('0') : c.slice(0, 9);
       it.listCode12 = base + ('00' + seq[c]).slice(-3);
