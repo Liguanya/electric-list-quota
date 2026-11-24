@@ -884,5 +884,17 @@ ck('标准清单编码补12位', capX[4][8], '030412005001');
 ck('T接箱子目下设备单价195', capX[6][14], 195);
 ck('智慧配电子目下设备单价120000', capX[3][14], 120000);
 
+// 2026-11-24 主人确认：三项推断转为确定口径，不再提示核对
+ck('10kV档按2-988确定', elPr('送配电装置系统调试 10kV以内交流供电').quotaCode, '2-988');
+ck('10kV档不再标推断', elPr('送配电装置系统调试 10kV以内交流供电').codeInferred, false);
+ck('UPS100kVA档确定', elPr('UPS及电池 100KV·A').codeInferred, false);
+ck('UPS500kVA档确定', elPr('UPS及电池 500KV·A').codeInferred, false);
+ck('电动机检查接线套2-1886', elPr('电动机检查接线').quotaCode, '2-1886');
+ck('电动机检查接线定额名', elPr('电动机检查接线').quotaName, '电动机检查接线');
+ck('电动机检查接线无告警', elPr('电动机检查接线').warn || '', '');
+ck('送配电系统无告警', elPr('送配电装置系统调试 1kV以内交流供电').warn || '', '');
+ck('UPS有容量时无告警', elPr('UPS及电池 100KV·A').warn || '', '');
+ck('UPS未注容量仍有告警', /未识别UPS容量/.test(elPr('UPS及电池').warn || ''), true);
+
 console.log('\n结果: ' + pass + ' 通过, ' + fail + ' 失败');
 process.exit(fail ? 1 : 0);

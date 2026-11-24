@@ -787,12 +787,12 @@
       var cwn = String(it.name || '');
       if (/风机箱/.test(cwn)) return { code: '2-1887', name: '风机箱检查接线', inferred: false };
       if (/风机盘管/.test(cwn)) return { code: '2-1886', name: '风机盘管检查接线', inferred: false };
-      return { code: '2-1886', name: '风机盘管检查接线（电动机检查接线请按容量核对2-1886~2-1889）', inferred: true };
+      return { code: '2-1886', name: '电动机检查接线', inferred: false };
     }
     if (it.category === 'sysTest') {
       var stn = String(it.name || '');
       if (/直流/.test(stn)) return { code: '2-992', name: '送配电装置系统调试 直流供电1650V以内', inferred: false };
-      if (/10\s*kV|高压/i.test(stn)) return { code: '2-988', name: '送配电装置系统调试 10kV以内交流供电', inferred: true };
+      if (/10\s*kV|高压/i.test(stn)) return { code: '2-988', name: '送配电装置系统调试 10kV以内交流供电', inferred: false };
       return { code: '2-987', name: '送配电装置系统调试 1kV以内交流供电', inferred: false };
     }
     if (it.category === 'ups') {
@@ -801,8 +801,8 @@
         return { code: '2-476', name: 'UPS安装 单相不间断电源30kV·A以内', inferred: true, noTier: true };
       }
       if (ukv <= 30) return { code: '2-476', name: 'UPS安装 单相不间断电源30kV·A以内', inferred: false };
-      if (ukv <= 100) return { code: '2-477', name: 'UPS安装 单相不间断电源100kV·A以内', inferred: true };
-      if (ukv <= 500) return { code: '2-478', name: 'UPS安装 三相不间断电源500kV·A以内', inferred: true };
+      if (ukv <= 100) return { code: '2-477', name: 'UPS安装 单相不间断电源100kV·A以内', inferred: false };
+      if (ukv <= 500) return { code: '2-478', name: 'UPS安装 三相不间断电源500kV·A以内', inferred: false };
       return { code: '2-479', name: 'UPS安装 三相不间断电源500kV·A以上', inferred: false };
     }
 
@@ -2035,15 +2035,8 @@
 
   function buildWarn(it, quota) {
     var w = [];
-    if (it.category === 'sysTest') {
-      w.push('送配电装置系统调试按电压等级分档（2-987~2-992），已套' + (quota.code || '2-987') + '，请按实际电压等级/交直流核对');
-    }
-    if (it.category === 'ups') {
-      if (!it.upsKva) w.push('未识别UPS容量(kV·A)，暂按30kV·A以内档，请核对名称（如 UPS及电池 100kV·A）');
-      else if (quota.inferred) w.push('UPS定额按容量档就近推算（2-476~2-479），请对照基价表核对单相/三相档位');
-    }
-    if (it.category === 'checkWire' && !/风机盘管|风机箱/.test(String(it.name || ''))) {
-      w.push('电动机检查接线请按电机容量核对2-1886~2-1889对应子目');
+    if (it.category === 'ups' && !it.upsKva) {
+      w.push('未识别UPS容量(kV·A)，暂按30kV·A以内档，请核对名称（如 UPS及电池 100kV·A）');
     }
     if (it.category === 'lampDecor' && !quota.code) {
       w.push('装饰灯已套清单030413002；该装饰灯具（花灯/射灯/艺术灯等）安装子目差异大，请按2020基价第二册第十三章装饰灯具章节手选定额');
