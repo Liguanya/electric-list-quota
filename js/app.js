@@ -2520,6 +2520,15 @@
     return escapeHtml(it.spec || '—');
   }
 
+  // 网页表格用：项目特征（与导出「项目特征」列同源，缺省时即时生成）
+  function featText(it) {
+    if (it.features) return it.features;
+    try {
+      return (typeof generateFeature === 'function' ? generateFeature('guanglianda', it)
+             : (typeof featureText === 'function' ? featureText(it) : '')) || '';
+    } catch (e) { return ''; }
+  }
+
   function renderTable(data) {
     annotateListCode12(data);
     var tbody = document.getElementById('tableBody');
@@ -2536,6 +2545,7 @@
         '<td>' + escapeHtml(item.model || '—') + '</td>' +
         '<td>' + specCell(item) + '</td>' +
         '<td class="cell-sec">' + (item.section !== null && (item.category === 'power' || item.category === 'head' || item.category === 'control') ? item.section : '—') + '</td>' +
+        '<td class="cell-feature col-feat"><div class="feat-box" title="' + escapeHtml(featText(item)) + '">' + escapeHtml(featText(item) || '—') + '</div></td>' +
         '<td class="cell-qcode">' + (item.quotaCode || '—') + (item.isFallback ? ' <span class="tag tag-fb">补项</span>' : '') + ' ' + inferTag(item) + '</td>' +
         '<td class="cell-qname" title="' + escapeHtml(item.quotaName) + '">' + escapeHtml(item.quotaName || '—') +
           ((item.quotaFactor && item.quotaFactor !== 1) ? ' <span class="tag tag-info" title="定额单位为' + escapeHtml(item.quotaUnit) + '，导出时工程量已按 ÷' + item.quotaFactor + ' 换算">' + escapeHtml(item.quotaUnit) + '</span>' : '') + '</td>' +
